@@ -52,7 +52,7 @@ FLAGS:
   --help                Show this help message.
 
 INTERNAL FLAGS (not for direct use):
-  --internal-diff-processor
+  --compare
 ```
 
 To begin with, we could focus on implementing just --yq since it is the most general.
