@@ -1,0 +1,150 @@
+#!/bin/bash
+set -euo pipefail
+
+# kdiff - Enhanced kubectl/argocd diff with filtering and preprocessing
+# Usage: kdiff [FLAGS] -- <COMMAND>
+#        kdiff --internal-diff-processor <file1> <file2>
+
+VERSION="0.1.0"
+SCRIPT_NAME="kdiff"
+
+# Global variables for configuration
+KIND_FILTER=""
+SCOPE_FILTER=""
+YQ_EXPRESSION=""
+INTERNAL_MODE=false
+ORIGINAL_EXTERNAL_DIFF=""
+
+# Help message
+show_help() {
+    cat << EOF
+$SCRIPT_NAME v$VERSION - Enhanced kubectl/argocd diff with filtering
+
+USAGE:
+    $SCRIPT_NAME [FLAGS] -- <COMMAND>
+
+FLAGS:
+    --kind=<kinds>        Only show diffs for specified resource kinds
+                         (e.g., Pod,Service,po,svc). Case-insensitive.
+    --scope=<yq_path>     Shortcut to diff only a specific part of resources
+                         (e.g., .spec, .metadata.labels)
+    --yq=<expression>     Apply arbitrary yq expression to both manifests
+    --help               Show this help message
+
+EXAMPLES:
+    # Diff only deployment specs
+    $SCRIPT_NAME --scope=.spec -- kubectl diff -f deployment.yaml
+    
+    # Show diffs for services and pods only
+    $SCRIPT_NAME --kind=svc,po -- kubectl diff -k overlays/staging
+    
+    # Remove noisy annotations before diffing
+    $SCRIPT_NAME --yq 'del(.metadata.annotations."kubectl.kubernetes.io/last-applied-configuration")' -- kubectl diff -f .
+    
+    # Use with argocd
+    $SCRIPT_NAME --kind=Deployment -- argocd diff myapp
+
+INTEGRATION:
+    Set as KUBECTL_EXTERNAL_DIFF for automatic usage:
+    export KUBECTL_EXTERNAL_DIFF="$SCRIPT_NAME --scope=.spec"
+    kubectl diff -f myapp.yaml
+
+EOF
+}
+
+# Parse command line arguments
+parse_args() {
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            --help|-h)
+                show_help
+                exit 0
+                ;;
+            --kind=*)
+                KIND_FILTER="${1#*=}"
+                shift
+                ;;
+            --scope=*)
+                SCOPE_FILTER="${1#*=}"
+                shift
+                ;;
+            --yq=*)
+                YQ_EXPRESSION="${1#*=}"
+                shift
+                ;;
+            --internal-diff-processor)
+                INTERNAL_MODE=true
+                shift
+                break
+                ;;
+            --)
+                shift
+                break
+                ;;
+            *)
+                echo "Error: Unknown option '$1'" >&2
+                echo "Use --help for usage information" >&2
+                exit 1
+                ;;
+        esac
+    done
+    
+    # Store remaining arguments
+    REMAINING_ARGS=("$@")
+}
+
+# Check dependencies
+check_dependencies() {
+    local missing_deps=()
+    
+    if ! command -v yq >/dev/null 2>&1; then
+        missing_deps+=("yq")
+    fi
+    
+    if ! command -v diff >/dev/null 2>&1; then
+        missing_deps+=("diff")
+    fi
+    
+    if ! command -v mktemp >/dev/null 2>&1; then
+        missing_deps+=("mktemp")
+    fi
+    
+    if [[ ${#missing_deps[@]} -gt 0 ]]; then
+        echo "Error: Missing required dependencies: ${missing_deps[*]}" >&2
+        echo "Please install the missing tools and try again." >&2
+        exit 1
+    fi
+}
+
+# Main function
+main() {
+    parse_args "$@"
+    check_dependencies
+    
+    if [[ "$INTERNAL_MODE" == true ]]; then
+        # Internal mode: called by kubectl with two file arguments
+        if [[ ${#REMAINING_ARGS[@]} -lt 2 ]]; then
+            echo "Error: Internal mode requires two file arguments" >&2
+            exit 1
+        fi
+        
+        echo "Internal mode not yet implemented" >&2
+        echo "Would process: ${REMAINING_ARGS[0]} ${REMAINING_ARGS[1]}" >&2
+        exit 1
+    else
+        # User-facing mode: wrapper that sets up KUBECTL_EXTERNAL_DIFF
+        if [[ ${#REMAINING_ARGS[@]} -eq 0 ]]; then
+            echo "Error: No command specified after --" >&2
+            echo "Use --help for usage information" >&2
+            exit 1
+        fi
+        
+        echo "User-facing mode not yet implemented" >&2
+        echo "Would execute: ${REMAINING_ARGS[*]}" >&2
+        echo "With filters: kind='$KIND_FILTER' scope='$SCOPE_FILTER' yq='$YQ_EXPRESSION'" >&2
+        exit 1
+    fi
+}
+
+# Run main function with all arguments
+main "$@"
