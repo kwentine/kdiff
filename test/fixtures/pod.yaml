@@ -1,0 +1,52 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: nginx-pod
+  namespace: default
+  labels:
+    app: nginx
+    version: v1
+  annotations:
+    kubectl.kubernetes.io/last-applied-configuration: |
+      {"apiVersion":"v1","kind":"Pod","metadata":{"annotations":{},"labels":{"app":"nginx","version":"v1"},"name":"nginx-pod","namespace":"default"},"spec":{"containers":[{"image":"nginx:1.20","name":"nginx","ports":[{"containerPort":80}]}]}}
+spec:
+  containers:
+  - name: nginx
+    image: nginx:1.20
+    ports:
+    - containerPort: 80
+    env:
+    - name: ENV_VAR
+      value: "production"
+    resources:
+      requests:
+        memory: "64Mi"
+        cpu: "250m"
+      limits:
+        memory: "128Mi"
+        cpu: "500m"
+    volumeMounts:
+    - name: config-volume
+      mountPath: /etc/config
+  volumes:
+  - name: config-volume
+    configMap:
+      name: nginx-config
+  restartPolicy: Always
+  nodeSelector:
+    disktype: ssd
+status:
+  phase: Running
+  conditions:
+  - type: Ready
+    status: "True"
+    lastTransitionTime: "2024-01-15T10:30:00Z"
+  - type: PodScheduled
+    status: "True"
+    lastTransitionTime: "2024-01-15T10:29:00Z"
+  containerStatuses:
+  - name: nginx
+    ready: true
+    restartCount: 0
+    image: nginx:1.20
+    imageID: sha256:abc123...
