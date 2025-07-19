@@ -1,6 +1,6 @@
 * Problem statement
 
-I would like to enhance the =argocd diff= and =kubectl diff= user experience.
+The goal of this project is to enhance the =argocd diff= and =kubectl diff= user experience.
 
 ** Ideas for improvements
 
@@ -48,6 +48,7 @@ I would like to enhance the =argocd diff= and =kubectl diff= user experience.
     but I am open to suggestions
 - The script name should be short, elegant and convey the ideas of flexibility, kubernetes, and diffing.
 
+
 * Brainstorming instructions
 - Help me brainstorm around this initial idea
 - Help me produce and actionable plan, captured in Markdown format
@@ -59,8 +60,9 @@ I would like to enhance the =argocd diff= and =kubectl diff= user experience.
   - Wild ideas
     - What inspires you!
 
+
 * Agent context
 
-- You can find an initial design plan in `PLAN.md`
-- You should create a `TODO.md` file that will hold finer-grained task descriptions and concrete next steps.
-- You should regularly commit your changes to the branch `<agent>/main`
+- You can find an initial design plan in =PLAN.md=
+- You should create a =TODO.md= file that will hold finer-grained task descriptions and concrete next steps.
+- You should regularly commit your changes to the branch =<agent>/main=
