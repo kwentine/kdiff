@@ -12,8 +12,8 @@ SCRIPT_NAME="kdiff"
 KIND_FILTER=""
 SCOPE_FILTER=""
 YQ_EXPRESSION=""
+DIFF_CMD=""
 INTERNAL_MODE=false
-ORIGINAL_EXTERNAL_DIFF=""
 
 # Help message
 show_help() {
@@ -70,6 +70,10 @@ parse_args() {
                 ;;
             --yq=*)
                 YQ_EXPRESSION="${1#*=}"
+                shift
+                ;;
+            --diff-cmd=*)
+                DIFF_CMD="${1#*=}"
                 shift
                 ;;
             --compare)
@@ -168,7 +172,7 @@ compare_files() {
     fi
     
     # Step 4: Run diff
-    local diff_tool="${ORIGINAL_EXTERNAL_DIFF:-diff -u}"
+    local diff_tool="${DIFF_CMD:-diff -u}"
     ${diff_tool} "${temp1}" "${temp2}"
     
     # Note: diff exit code is preserved (0=no diff, 1=diff found)
