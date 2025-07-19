@@ -89,3 +89,10 @@ I would like to enhance the =argocd diff= and =kubectl diff= user experience.
 ** Instructions
 - Help me brainstorm around this initial idea
 - Help me produce and actionable plan, captured in Markdown format
+- Structure your thoughts in three sections:
+  - MVP design
+    - Very actionable outline to code a minimal working version of the tool
+  - Next steps
+    - The most important improvements after MVP
+  - Wild ideas
+    - What inspires you!
