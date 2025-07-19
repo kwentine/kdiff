@@ -12,7 +12,7 @@ I would like to enhance the =argocd diff= and =kubectl diff= user experience.
 - Ability to choose diff tool
   - use any of =dyff=, =difftastic=, =delta= etc...
 - Perists the diff output
-  - Save one file per diff
+  - Save one file per diff, deriving file name from diff header
   - Preserve annotations (e.g. leading and trailing comments) when updating saved diffs
 - Facilitate diff reviewing
   - Ability to mark saved diffs as "resolved", "pending", "stale"
@@ -47,6 +47,11 @@ I would like to enhance the =argocd diff= and =kubectl diff= user experience.
   # Use watchexec to keep ArgoCD diffs up to date
   # If comments are added to a diff file inside current_diffs, they should not be wiped out!
   watchexec -f '*kustomization.yaml' kdiff --save current_diffs -- argocd diff --local overlays/prod
+
+  # Use a diff stream coming from stding,
+  # and save one file per diff in the local_diffs directory.
+  # This involves only diff output parsing
+  diff -u -N build/current build/initial | kdiff --save local_diffs -
 #+end_src
 
 ** Design considerations
@@ -67,9 +72,7 @@ I would like to enhance the =argocd diff= and =kubectl diff= user experience.
     but I am open to suggestions.
 - The script name should be short, elegant and convey the ideas of flexibility, kubernetes, and diffing.
 
-
 ** Practical use cases
-
 *** Kustomization refactoring
 
 - An app =myapp= is deployed to production by ArgoCD using kustomize builds
@@ -84,6 +87,5 @@ I would like to enhance the =argocd diff= and =kubectl diff= user experience.
   - Remove on a case-by-case basis the noisy fields from 1.
 
 ** Instructions
-
 - Help me brainstorm around this initial idea
 - Help me produce and actionable plan, captured in Markdown format
