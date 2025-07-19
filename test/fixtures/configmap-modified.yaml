@@ -1,0 +1,30 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nginx-config
+  namespace: default
+  labels:
+    app: nginx
+    version: v2
+  annotations:
+    kubectl.kubernetes.io/last-applied-configuration: |
+      {"apiVersion":"v1","kind":"ConfigMap","metadata":{"annotations":{},"labels":{"app":"nginx","version":"v2"},"name":"nginx-config","namespace":"default"},"data":{"nginx.conf":"server {\n    listen 80;\n    location / {\n        return 200 'Hello from v2';\n    }\n}\n","redis.conf":"bind 127.0.0.1\nport 6379\n"}}
+data:
+  nginx.conf: |
+    server {
+        listen 80;
+        location / {
+            return 200 'Hello from v2';
+            add_header Content-Type text/plain;
+            add_header X-Version v2;
+        }
+    }
+  app.properties: |
+    debug=true
+    log.level=DEBUG
+    max.connections=200
+    cache.enabled=true
+  redis.conf: |
+    bind 127.0.0.1
+    port 6379
+    timeout 300
