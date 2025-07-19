@@ -9,19 +9,13 @@ I would like to enhance the =argocd diff= and =kubectl diff= user experience.
   - Limit the scope of the diff, for example to the resource =.spec=
   - Remove noisy fields from the diff, such as =last-applied-configuration=
   - More generally, allow arbitrary =yq= preprocessing of manifests before the diff
-- Ability to choose diff tool
+- Ability to still choose custom diff tool
   - use any of =dyff=, =difftastic=, =delta= etc...
-- Perists the diff output
-  - Save one file per diff, deriving file name from diff header
-  - Preserve annotations (e.g. leading and trailing comments) when updating saved diffs
-- Facilitate diff reviewing
-  - Ability to mark saved diffs as "resolved", "pending", "stale"
 
 ** Examples
 
 #+begin_src bash
   # Assume the script is called kdiff
-
   # Should output a helpful message
   kdiff --help
 
@@ -40,53 +34,21 @@ I would like to enhance the =argocd diff= and =kubectl diff= user experience.
   # The user should be able to use any diff tool
   KUBECTL_EXTERNAL_DIFF=fancydiff
   kdiff --ignore=.metadata.labels,.spec.affinity -- -f mydeploy.yaml
-
-  # Save the output stream in one file per diff
-  kdiff --save current_diffs -- -Rf overlays/prod
-
-  # Use watchexec to keep ArgoCD diffs up to date
-  # If comments are added to a diff file inside current_diffs, they should not be wiped out!
-  watchexec -f '*kustomization.yaml' kdiff --save current_diffs -- argocd diff --local overlays/prod
-
-  # Use a diff stream coming from stding,
-  # and save one file per diff in the local_diffs directory.
-  # This involves only diff output parsing
-  diff -u -N build/current build/initial | kdiff --save local_diffs -
 #+end_src
 
 ** Design considerations
 
-- Clear separation between diff generation, and diff parsing/persistence
 - Diff generation
   - Hooking into =KUBECTL_EXTERNAL_DIFF= seems a good idea
   - It should be possible to call the script interactively,
-    or assign it to =KUBECTL_EXTERNAL_DIFF=
+    or assign it directly to =KUBECTL_EXTERNAL_DIFF=
   - If called interactively,
     the users original =KUBECTL_EXTERNAL_DIFF= should be taken into consideration
   - Bash could be a suitable programming language for this part,
     but I am open to suggestions
-- The code handling diff parsing
-  - Should target a data structure such as a list of =(<diff header>, [<diff hunk>, ...])= elements
-  - Should handle different diff output formats, with dedicated parsers
-  - Python would be a good candidate for this part,
-    but I am open to suggestions.
 - The script name should be short, elegant and convey the ideas of flexibility, kubernetes, and diffing.
 
-** Practical use cases
-*** Kustomization refactoring
-
-- An app =myapp= is deployed to production by ArgoCD using kustomize builds
-- =myapp= manifests need to be migrated to a Helm chart
-- Objective
-  - Maintain an up-to-date set of diffs between initial state and current state of the refactoring in a directory called =live_diffs=
-  - Deployed the refactored app when all the diffs in =live_diffs= have been resolved/approved by one person in the team
-
-*** Quick check before performing a kubectl apply
-
-- Common workflow is 1. =k diff -Rf overlay/staging= followed by 2. =k apply -Rf overlay/staging=
-  - Remove on a case-by-case basis the noisy fields from 1.
-
-** Instructions
+* Brainstorming instructions
 - Help me brainstorm around this initial idea
 - Help me produce and actionable plan, captured in Markdown format
 - Structure your thoughts in three sections:
@@ -96,3 +58,9 @@ I would like to enhance the =argocd diff= and =kubectl diff= user experience.
     - The most important improvements after MVP
   - Wild ideas
     - What inspires you!
+
+* Agent context
+
+- You can find an initial design plan in `PLAN.md`
+- You should create a `TODO.md` file that will hold finer-grained task descriptions and concrete next steps.
+- You should regularly commit your changes to the branch `<agent>/main`
