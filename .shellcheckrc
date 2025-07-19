@@ -1,0 +1,17 @@
+# ShellCheck configuration for kdiff project
+
+# Enable additional checks
+enable=all
+
+# Disable specific checks that don't apply to our use case
+disable=SC2034  # Unused variables (may be used in sourced files)
+disable=SC1091  # Not following sourced files (we don't source external files)
+
+# Set shell dialect (we use bash)
+shell=bash
+
+# Enable checking of sourced files
+check-sourced=true
+
+# Exclude paths (none for now)
+exclude-dir=
