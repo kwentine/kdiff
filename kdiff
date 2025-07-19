@@ -54,7 +54,12 @@ EOF
 
 # Parse command line arguments
 parse_args() {
+    # Debug: log how we were called
+    echo "DEBUG: kdiff called with $# arguments" >&2
+    echo "DEBUG: Full command line: $0 $*" >&2
+    
     while [[ $# -gt 0 ]]; do
+        echo "DEBUG: Processing '$1', remaining: $#, INTERNAL_MODE=$INTERNAL_MODE" >&2
         case $1 in
             --help|-h)
                 show_help
@@ -86,9 +91,12 @@ parse_args() {
                 ;;
             *)
                 # In internal mode, unknown arguments are file paths
+                echo "DEBUG: Hit unknown argument '$1', INTERNAL_MODE=$INTERNAL_MODE" >&2
                 if [[ "${INTERNAL_MODE}" == true ]]; then
+                    echo "DEBUG: Breaking from argument parsing (internal mode)" >&2
                     break
                 else
+                    echo "DEBUG: Not in internal mode, treating as error" >&2
                     echo "Error: Unknown option '$1'" >&2
                     echo "Use --help for usage information" >&2
                     exit 1
@@ -282,6 +290,8 @@ apply_transformations() {
 main() {
     parse_args "$@"
     check_dependencies
+    
+    echo "DEBUG: After parsing - INTERNAL_MODE=$INTERNAL_MODE, REMAINING_ARGS=(${REMAINING_ARGS[*]})" >&2
     
     if [[ "${INTERNAL_MODE}" == true ]]; then
         # Internal mode: called by kubectl with two file arguments
