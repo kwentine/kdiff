@@ -52,60 +52,57 @@ INTEGRATION:
 EOF
 }
 
-# Parse command line arguments
+# Parse command line arguments using GNU getopt
 parse_args() {
-    # Debug: log how we were called
-    echo "DEBUG: kdiff called with $# arguments" >&2
-    echo "DEBUG: Full command line: $0 $*" >&2
+    # Use getopt to parse and normalize arguments
+    local PARSED
+    if ! PARSED=$(getopt -o h --long help,compare,scope:,diff-cmd:,kind:,yq: -n "$0" -- "$@"); then
+        echo "Error: Invalid arguments" >&2
+        echo "Use --help for usage information" >&2
+        exit 1
+    fi
     
+    # Set the normalized arguments
+    eval set -- "${PARSED}"
+    
+    # Parse the normalized arguments
     while [[ $# -gt 0 ]]; do
-        echo "DEBUG: Processing '$1', remaining: $#, INTERNAL_MODE=$INTERNAL_MODE" >&2
         case $1 in
-            --help|-h)
+            -h|--help)
                 show_help
                 exit 0
-                ;;
-            --kind=*)
-                KIND_FILTER="${1#*=}"
-                shift
-                ;;
-            --scope=*)
-                SCOPE_FILTER="${1#*=}"
-                shift
-                ;;
-            --yq=*)
-                YQ_EXPRESSION="${1#*=}"
-                shift
-                ;;
-            --diff-cmd=*)
-                DIFF_CMD="${1#*=}"
-                shift
                 ;;
             --compare)
                 INTERNAL_MODE=true
                 shift
+                ;;
+            --kind)
+                KIND_FILTER="$2"
+                shift 2
+                ;;
+            --scope)
+                SCOPE_FILTER="$2"
+                shift 2
+                ;;
+            --yq)
+                YQ_EXPRESSION="$2"
+                shift 2
+                ;;
+            --diff-cmd)
+                DIFF_CMD="$2"
+                shift 2
                 ;;
             --)
                 shift
                 break
                 ;;
             *)
-                # In internal mode, unknown arguments are file paths
-                echo "DEBUG: Hit unknown argument '$1', INTERNAL_MODE=$INTERNAL_MODE" >&2
-                if [[ "${INTERNAL_MODE}" == true ]]; then
-                    echo "DEBUG: Breaking from argument parsing (internal mode)" >&2
-                    break
-                else
-                    echo "DEBUG: Not in internal mode, treating as error" >&2
-                    echo "Error: Unknown option '$1'" >&2
-                    echo "Use --help for usage information" >&2
-                    exit 1
-                fi
+                break
                 ;;
         esac
     done
     
-    # Store remaining arguments
+    # Store remaining arguments (file paths)
     REMAINING_ARGS=("$@")
 }
 
@@ -148,22 +145,22 @@ compare_files() {
     fi
     
     # Handle snap yq access issues by copying files to accessible location if needed
-    local work_file1="$file1"
-    local work_file2="$file2"
+    local work_file1="${file1}"
+    local work_file2="${file2}"
     local cleanup_work_files=false
     
     # Check if yq can access the files (snap packages may have restricted access to /tmp)
-    if ! yq '.kind' "$file1" >/dev/null 2>&1; then
+    if ! yq '.kind' "${file1}" >/dev/null 2>&1; then
         # Copy to current directory which snap can access
-        work_file1="./kdiff_temp_$(basename "$file1")"
-        work_file2="./kdiff_temp_$(basename "$file2")"
-        cp "$file1" "$work_file1"
-        cp "$file2" "$work_file2"
+        work_file1="./kdiff_temp_$(basename "${file1}")"
+        work_file2="./kdiff_temp_$(basename "${file2}")"
+        cp "${file1}" "${work_file1}"
+        cp "${file2}" "${work_file2}"
         cleanup_work_files=true
         
         # Setup cleanup for work files too
-        if [[ "$cleanup_work_files" == true ]]; then
-            trap 'rm -f "$work_file1" "$work_file2"' EXIT
+        if [[ "${cleanup_work_files}" == true ]]; then
+            trap 'rm -f "${work_file1}" "${work_file2}"' EXIT
         fi
     fi
     
@@ -290,8 +287,6 @@ apply_transformations() {
 main() {
     parse_args "$@"
     check_dependencies
-    
-    echo "DEBUG: After parsing - INTERNAL_MODE=$INTERNAL_MODE, REMAINING_ARGS=(${REMAINING_ARGS[*]})" >&2
     
     if [[ "${INTERNAL_MODE}" == true ]]; then
         # Internal mode: called by kubectl with two file arguments
