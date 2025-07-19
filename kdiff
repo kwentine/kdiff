@@ -18,10 +18,10 @@ ORIGINAL_EXTERNAL_DIFF=""
 # Help message
 show_help() {
     cat << EOF
-$SCRIPT_NAME v$VERSION - Enhanced kubectl/argocd diff with filtering
+${SCRIPT_NAME} v${VERSION} - Enhanced kubectl/argocd diff with filtering
 
 USAGE:
-    $SCRIPT_NAME [FLAGS] -- <COMMAND>
+    ${SCRIPT_NAME} [FLAGS] -- <COMMAND>
 
 FLAGS:
     --kind=<kinds>        Only show diffs for specified resource kinds
@@ -33,20 +33,20 @@ FLAGS:
 
 EXAMPLES:
     # Diff only deployment specs
-    $SCRIPT_NAME --scope=.spec -- kubectl diff -f deployment.yaml
+    ${SCRIPT_NAME} --scope=.spec -- kubectl diff -f deployment.yaml
     
     # Show diffs for services and pods only
-    $SCRIPT_NAME --kind=svc,po -- kubectl diff -k overlays/staging
+    ${SCRIPT_NAME} --kind=svc,po -- kubectl diff -k overlays/staging
     
     # Remove noisy annotations before diffing
-    $SCRIPT_NAME --yq 'del(.metadata.annotations."kubectl.kubernetes.io/last-applied-configuration")' -- kubectl diff -f .
+    ${SCRIPT_NAME} --yq 'del(.metadata.annotations."kubectl.kubernetes.io/last-applied-configuration")' -- kubectl diff -f .
     
     # Use with argocd
-    $SCRIPT_NAME --kind=Deployment -- argocd diff myapp
+    ${SCRIPT_NAME} --kind=Deployment -- argocd diff myapp
 
 INTEGRATION:
     Set as KUBECTL_EXTERNAL_DIFF for automatic usage:
-    export KUBECTL_EXTERNAL_DIFF="$SCRIPT_NAME --scope=.spec"
+    export KUBECTL_EXTERNAL_DIFF="${SCRIPT_NAME} --scope=.spec"
     kubectl diff -f myapp.yaml
 
 EOF
@@ -121,7 +121,7 @@ main() {
     parse_args "$@"
     check_dependencies
     
-    if [[ "$INTERNAL_MODE" == true ]]; then
+    if [[ "${INTERNAL_MODE}" == true ]]; then
         # Internal mode: called by kubectl with two file arguments
         if [[ ${#REMAINING_ARGS[@]} -lt 2 ]]; then
             echo "Error: Internal mode requires two file arguments" >&2
@@ -141,7 +141,7 @@ main() {
         
         echo "User-facing mode not yet implemented" >&2
         echo "Would execute: ${REMAINING_ARGS[*]}" >&2
-        echo "With filters: kind='$KIND_FILTER' scope='$SCOPE_FILTER' yq='$YQ_EXPRESSION'" >&2
+        echo "With filters: kind='${KIND_FILTER}' scope='${SCOPE_FILTER}' yq='${YQ_EXPRESSION}'" >&2
         exit 1
     fi
 }
