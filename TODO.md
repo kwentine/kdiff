@@ -2,7 +2,23 @@
 
 This file tracks the development tasks for the kdiff project.
 
+
 ## High Priority
+
+### Fixes
+
+- [ ] Find a workaround to KUBECTL_EXTERNAL_DIFF sanitization
+  - no . are allowed in the command
+  - we need to generate our arguments and save them to a temporary file
+  - then call ourselves with `--args=<filename>`
+  - in the future, the format used can be the same as `.kdiffrc`
+
+
+- [ ] Preserve useful names
+  -  The diff header now looks like:
+     `--- /tmp/kdiff.5ynjX3	2025-07-19 16:38:24.598176866 +0200`
+     which is not very helpful
+
 
 ### Core Implementation
 - [x] **Implement basic kdiff script structure with argument parsing**
@@ -17,8 +33,8 @@ This file tracks the development tasks for the kdiff project.
   - Execute the target command (kubectl diff, argocd diff, etc.)
   - Preserve user's original KUBECTL_EXTERNAL_DIFF if set
 
-- [ ] **Add internal comparison mode for kubectl integration**
-  - Implement --internal-diff-processor flag handling
+- [x] **Add internal comparison mode for kubectl integration**
+  - Implement --compare flag handling
   - Accept two file paths from kubectl (live and local resources)
   - Process the files according to filter options
   - Call appropriate diff tool on processed files

@@ -34,13 +34,13 @@ FLAGS:
 EXAMPLES:
     # Diff only deployment specs
     ${SCRIPT_NAME} --scope=.spec -- kubectl diff -f deployment.yaml
-    
+
     # Show diffs for services and pods only
     ${SCRIPT_NAME} --kind=svc,po -- kubectl diff -k overlays/staging
-    
+
     # Remove noisy annotations before diffing
     ${SCRIPT_NAME} --yq 'del(.metadata.annotations."kubectl.kubernetes.io/last-applied-configuration")' -- kubectl diff -f .
-    
+
     # Use with argocd
     ${SCRIPT_NAME} --kind=Deployment -- argocd diff myapp
 
@@ -61,10 +61,10 @@ parse_args() {
         echo "Use --help for usage information" >&2
         exit 1
     fi
-    
+
     # Set the normalized arguments
     eval set -- "${PARSED}"
-    
+
     # Parse the normalized arguments
     while [[ $# -gt 0 ]]; do
         case $1 in
@@ -101,49 +101,37 @@ parse_args() {
                 ;;
         esac
     done
-    
+
     # Store remaining arguments (file paths)
     REMAINING_ARGS=("$@")
-}
-
-# Check dependencies
-check_dependencies() {
-    local missing_deps=()
-    
-    if ! command -v yq >/dev/null 2>&1; then
-        missing_deps+=("yq")
-    fi
-    
-    if ! command -v diff >/dev/null 2>&1; then
-        missing_deps+=("diff")
-    fi
-    
-    if ! command -v mktemp >/dev/null 2>&1; then
-        missing_deps+=("mktemp")
-    fi
-    
-    if [[ ${#missing_deps[@]} -gt 0 ]]; then
-        echo "Error: Missing required dependencies: ${missing_deps[*]}" >&2
-        echo "Please install the missing tools and try again." >&2
-        exit 1
-    fi
 }
 
 # Compare two files with filtering and transformations
 compare_files() {
     local file1="$1"
     local file2="$2"
-    
+
+    # TODO: Refactor duplicate logic
+    # TODO: Find a more robust way of using the single file in the directory given by kubectl
     # Validate input files exist
     if [[ ! -f "${file1}" ]]; then
+      if [[ -d "${file1}" ]]; then
+        file1="${file1}"/$(ls -1 "${file1}")
+      else
         echo "Error: File not found: ${file1}" >&2
         exit 1
+      fi
     fi
+    # Validate input files exist
     if [[ ! -f "${file2}" ]]; then
+      if [[ -d "${file2}" ]]; then
+        file2="${file2}"/$(ls -1 "${file2}")
+      else
         echo "Error: File not found: ${file2}" >&2
         exit 1
+      fi
     fi
-    
+
     # Step 1: Kind filtering
     if [[ -n "${KIND_FILTER}" ]]; then
         local resource_kind
@@ -156,50 +144,50 @@ compare_files() {
             echo "Warning: Could not extract .kind from ${file1}" >&2
         fi
     fi
-    
+
     # Step 2: Create temporary files for transformation
     local temp1 temp2
     temp1=$(mktemp "${TMPDIR:-/tmp}/kdiff.XXXXXX")
     temp2=$(mktemp "${TMPDIR:-/tmp}/kdiff.XXXXXX")
-    
+
     # Setup cleanup trap
     trap 'rm -f "$temp1" "$temp2"' EXIT
-    
+
     # Step 3: Apply transformations
     if ! apply_transformations "${file1}" "${temp1}"; then
         echo "Error: Failed to transform ${file1}" >&2
         exit 1
     fi
-    
+
     if ! apply_transformations "${file2}" "${temp2}"; then
         echo "Error: Failed to transform ${file2}" >&2
         exit 1
     fi
-    
+
     # Step 4: Run diff
     local diff_tool="${DIFF_CMD:-diff -u}"
     ${diff_tool} "${temp1}" "${temp2}"
-    
+
     # Note: diff exit code is preserved (0=no diff, 1=diff found)
 }
 
 # Check if a resource kind should be included based on KIND_FILTER
 should_include_kind() {
     local resource_kind="$1"
-    
+
     if [[ -z "${KIND_FILTER}" ]]; then
         return 0  # No filter means include all
     fi
-    
+
     # Convert to lowercase for case-insensitive comparison
     local kind_lower="${resource_kind,,}"
     local filter_lower="${KIND_FILTER,,}"
-    
+
     # Split comma-separated kinds and check each
     IFS=',' read -ra kinds <<< "${filter_lower}"
     for kind in "${kinds[@]}"; do
         kind=$(echo "${kind}" | xargs)  # Trim whitespace
-        
+
         # Check exact match or common abbreviations
         case "${kind_lower}" in
             "${kind}"|"${kind}s")  # Match exact or plural
@@ -208,7 +196,7 @@ should_include_kind() {
             *)
                 ;;
         esac
-        
+
         # Check common Kubernetes abbreviations
         case "${kind}" in
             "po"|"pod")
@@ -227,7 +215,7 @@ should_include_kind() {
                 ;;
         esac
     done
-    
+
     return 1  # Kind not found in filter
 }
 
@@ -235,15 +223,15 @@ should_include_kind() {
 apply_transformations() {
     local input_file="$1"
     local output_file="$2"
-    
+
     # Build yq expression
     local yq_expr="."
-    
+
     # Apply scope filter if specified
     if [[ -n "${SCOPE_FILTER}" ]]; then
         yq_expr="${SCOPE_FILTER}"
     fi
-    
+
     # Apply custom yq expression if specified
     if [[ -n "${YQ_EXPRESSION}" ]]; then
         if [[ "${yq_expr}" == "." ]]; then
@@ -253,13 +241,13 @@ apply_transformations() {
             yq_expr="${yq_expr} | ${YQ_EXPRESSION}"
         fi
     fi
-    
+
     # Apply transformation
     if ! yq "${yq_expr}" "${input_file}" > "${output_file}" 2>/dev/null; then
         echo "Error: yq transformation failed: ${yq_expr}" >&2
         return 1
     fi
-    
+
     return 0
 }
 
@@ -267,14 +255,14 @@ apply_transformations() {
 main() {
     parse_args "$@"
     check_dependencies
-    
+
     if [[ "${INTERNAL_MODE}" == true ]]; then
         # Internal mode: called by kubectl with two file arguments
         if [[ ${#REMAINING_ARGS[@]} -lt 2 ]]; then
             echo "Error: Internal mode requires two file arguments" >&2
             exit 1
         fi
-        
+
         compare_files "${REMAINING_ARGS[0]}" "${REMAINING_ARGS[1]}"
     else
         # User-facing mode: wrapper that sets up KUBECTL_EXTERNAL_DIFF
@@ -283,7 +271,7 @@ main() {
             echo "Use --help for usage information" >&2
             exit 1
         fi
-        
+
         echo "User-facing mode not yet implemented" >&2
         echo "Would execute: ${REMAINING_ARGS[*]}" >&2
         echo "With filters: kind='${KIND_FILTER}' scope='${SCOPE_FILTER}' yq='${YQ_EXPRESSION}'" >&2
