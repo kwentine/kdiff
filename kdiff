@@ -139,16 +139,36 @@ compare_files() {
         exit 1
     fi
     
+    # Handle snap yq access issues by copying files to accessible location if needed
+    local work_file1="$file1"
+    local work_file2="$file2"
+    local cleanup_work_files=false
+    
+    # Check if yq can access the files (snap packages may have restricted access to /tmp)
+    if ! yq '.kind' "$file1" >/dev/null 2>&1; then
+        # Copy to current directory which snap can access
+        work_file1="./kdiff_temp_$(basename "$file1")"
+        work_file2="./kdiff_temp_$(basename "$file2")"
+        cp "$file1" "$work_file1"
+        cp "$file2" "$work_file2"
+        cleanup_work_files=true
+        
+        # Setup cleanup for work files too
+        if [[ "$cleanup_work_files" == true ]]; then
+            trap 'rm -f "$work_file1" "$work_file2"' EXIT
+        fi
+    fi
+    
     # Step 1: Kind filtering
     if [[ -n "${KIND_FILTER}" ]]; then
         local resource_kind
-        if resource_kind=$(yq '.kind' "${file1}" 2>/dev/null); then
+        if resource_kind=$(yq '.kind' "${work_file1}" 2>/dev/null); then
             if ! should_include_kind "${resource_kind}"; then
                 echo "INFO: Filtering out kind: ${resource_kind}" >&2
                 exit 0  # Tell kubectl "no diff" for this resource
             fi
         else
-            echo "Warning: Could not extract .kind from ${file1}" >&2
+            echo "Warning: Could not extract .kind from ${work_file1}" >&2
         fi
     fi
     
@@ -161,13 +181,13 @@ compare_files() {
     trap 'rm -f "$temp1" "$temp2"' EXIT
     
     # Step 3: Apply transformations
-    if ! apply_transformations "${file1}" "${temp1}"; then
-        echo "Error: Failed to transform ${file1}" >&2
+    if ! apply_transformations "${work_file1}" "${temp1}"; then
+        echo "Error: Failed to transform ${work_file1}" >&2
         exit 1
     fi
     
-    if ! apply_transformations "${file2}" "${temp2}"; then
-        echo "Error: Failed to transform ${file2}" >&2
+    if ! apply_transformations "${work_file2}" "${temp2}"; then
+        echo "Error: Failed to transform ${work_file2}" >&2
         exit 1
     fi
     
