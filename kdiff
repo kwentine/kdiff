@@ -75,16 +75,20 @@ parse_args() {
             --compare)
                 INTERNAL_MODE=true
                 shift
-                break
                 ;;
             --)
                 shift
                 break
                 ;;
             *)
-                echo "Error: Unknown option '$1'" >&2
-                echo "Use --help for usage information" >&2
-                exit 1
+                # In internal mode, unknown arguments are file paths
+                if [[ "${INTERNAL_MODE}" == true ]]; then
+                    break
+                else
+                    echo "Error: Unknown option '$1'" >&2
+                    echo "Use --help for usage information" >&2
+                    exit 1
+                fi
                 ;;
         esac
     done
@@ -116,6 +120,140 @@ check_dependencies() {
     fi
 }
 
+# Compare two files with filtering and transformations
+compare_files() {
+    local file1="$1"
+    local file2="$2"
+    
+    # Validate input files exist
+    if [[ ! -f "${file1}" ]]; then
+        echo "Error: File not found: ${file1}" >&2
+        exit 1
+    fi
+    if [[ ! -f "${file2}" ]]; then
+        echo "Error: File not found: ${file2}" >&2
+        exit 1
+    fi
+    
+    # Step 1: Kind filtering
+    if [[ -n "${KIND_FILTER}" ]]; then
+        local resource_kind
+        if resource_kind=$(yq '.kind' "${file1}" 2>/dev/null); then
+            if ! should_include_kind "${resource_kind}"; then
+                echo "INFO: Filtering out kind: ${resource_kind}" >&2
+                exit 0  # Tell kubectl "no diff" for this resource
+            fi
+        else
+            echo "Warning: Could not extract .kind from ${file1}" >&2
+        fi
+    fi
+    
+    # Step 2: Create temporary files for transformation
+    local temp1 temp2
+    temp1=$(mktemp "${TMPDIR:-/tmp}/kdiff.XXXXXX")
+    temp2=$(mktemp "${TMPDIR:-/tmp}/kdiff.XXXXXX")
+    
+    # Setup cleanup trap
+    trap 'rm -f "$temp1" "$temp2"' EXIT
+    
+    # Step 3: Apply transformations
+    if ! apply_transformations "${file1}" "${temp1}"; then
+        echo "Error: Failed to transform ${file1}" >&2
+        exit 1
+    fi
+    
+    if ! apply_transformations "${file2}" "${temp2}"; then
+        echo "Error: Failed to transform ${file2}" >&2
+        exit 1
+    fi
+    
+    # Step 4: Run diff
+    local diff_tool="${ORIGINAL_EXTERNAL_DIFF:-diff -u}"
+    ${diff_tool} "${temp1}" "${temp2}"
+    
+    # Note: diff exit code is preserved (0=no diff, 1=diff found)
+}
+
+# Check if a resource kind should be included based on KIND_FILTER
+should_include_kind() {
+    local resource_kind="$1"
+    
+    if [[ -z "${KIND_FILTER}" ]]; then
+        return 0  # No filter means include all
+    fi
+    
+    # Convert to lowercase for case-insensitive comparison
+    local kind_lower="${resource_kind,,}"
+    local filter_lower="${KIND_FILTER,,}"
+    
+    # Split comma-separated kinds and check each
+    IFS=',' read -ra kinds <<< "${filter_lower}"
+    for kind in "${kinds[@]}"; do
+        kind=$(echo "${kind}" | xargs)  # Trim whitespace
+        
+        # Check exact match or common abbreviations
+        case "${kind_lower}" in
+            "${kind}"|"${kind}s")  # Match exact or plural
+                return 0
+                ;;
+            *)
+                ;;
+        esac
+        
+        # Check common Kubernetes abbreviations
+        case "${kind}" in
+            "po"|"pod")
+                [[ "${kind_lower}" == "pod" ]] && return 0
+                ;;
+            "svc"|"service")
+                [[ "${kind_lower}" == "service" ]] && return 0
+                ;;
+            "deploy"|"deployment")
+                [[ "${kind_lower}" == "deployment" ]] && return 0
+                ;;
+            "cm"|"configmap")
+                [[ "${kind_lower}" == "configmap" ]] && return 0
+                ;;
+            *)
+                ;;
+        esac
+    done
+    
+    return 1  # Kind not found in filter
+}
+
+# Apply yq transformations to a file
+apply_transformations() {
+    local input_file="$1"
+    local output_file="$2"
+    
+    # Build yq expression
+    local yq_expr="."
+    
+    # Apply scope filter if specified
+    if [[ -n "${SCOPE_FILTER}" ]]; then
+        yq_expr="${SCOPE_FILTER}"
+    fi
+    
+    # Apply custom yq expression if specified
+    if [[ -n "${YQ_EXPRESSION}" ]]; then
+        if [[ "${yq_expr}" == "." ]]; then
+            yq_expr="${YQ_EXPRESSION}"
+        else
+            # Combine scope and custom expression
+            yq_expr="${yq_expr} | ${YQ_EXPRESSION}"
+        fi
+    fi
+    
+    # Apply transformation
+    if ! yq "${yq_expr}" "${input_file}" > "${output_file}" 2>/dev/null; then
+        echo "Error: yq transformation failed: ${yq_expr}" >&2
+        return 1
+    fi
+    
+    return 0
+}
+
 # Main function
 main() {
     parse_args "$@"
@@ -128,9 +266,7 @@ main() {
             exit 1
         fi
         
-        echo "Internal mode not yet implemented" >&2
-        echo "Would process: ${REMAINING_ARGS[0]} ${REMAINING_ARGS[1]}" >&2
-        exit 1
+        compare_files "${REMAINING_ARGS[0]}" "${REMAINING_ARGS[1]}"
     else
         # User-facing mode: wrapper that sets up KUBECTL_EXTERNAL_DIFF
         if [[ ${#REMAINING_ARGS[@]} -eq 0 ]]; then
