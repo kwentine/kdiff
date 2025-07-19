@@ -72,7 +72,7 @@ parse_args() {
                 YQ_EXPRESSION="${1#*=}"
                 shift
                 ;;
-            --internal-diff-processor)
+            --compare)
                 INTERNAL_MODE=true
                 shift
                 break
