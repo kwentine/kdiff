@@ -27,10 +27,15 @@ EXAMPLES:
     ${SCRIPT_NAME} --yq 'del(.metadata.annotations."kubectl.kubernetes.io/last-applied-configuration")' -- kubectl diff -f .
 
 INTEGRATION:
-    Set as KUBECTL_EXTERNAL_DIFF for automatic usage:
-    export KUBECTL_EXTERNAL_DIFF="${SCRIPT_NAME} --scope=.spec"
-    kubectl diff -f myapp.yaml
+    Optionally, directly set as KUBECTL_EXTERNAL_DIFF.
+    Assuming that you have in the ${HOME}/.config/kdiff/dyff-no-clutter directory:
+      - A file named 'yq' containing a yq expression
+      - An executable file 'diff' following the KUBECTL_EXTERNAL_DIFF calling convention
 
+    Then you can:
+
+    export KUBECTL_EXTERNAL_DIFF="${SCRIPT_NAME} --preset ${HOME}/.config/kdiff/dyff-no-clutter"
+    kubectl diff -f myapp.yaml
 EOF
 }
 
