@@ -1,12 +1,10 @@
 # Plan
 
-This document outlines the development plan for `kdiff`,
-a command-line tool to enhance the `kubectl diff` and `argocd diff` user experience.
+This document outlines the development plan for `kdiff`, a command-line tool to enhance the `kubectl diff` and `argocd diff` user experience.
 
 ## MVP Design
 
-The Minimum Viable Product (MVP) will be a single, self-contained Bash script named `kdiff`.
-Its primary goal is to act as a smart wrapper that preprocesses Kubernetes manifests before they are passed to a standard diff utility.
+The Minimum Viable Product (MVP) will be a single, self-contained Bash script named `kdiff`. Its primary goal is to act as a smart wrapper that preprocesses Kubernetes manifests before they are passed to a standard diff utility.
 
 ### Core Philosophy
 
@@ -27,10 +25,9 @@ Its primary goal is to act as a smart wrapper that preprocesses Kubernetes manif
 
 1.  **User-Facing Mode (Wrapper):** This is the default mode when a user calls `kdiff`.
     -   **Action:** It parses its own arguments (e.g., `--scope`, `--kind`). It identifies the target command, which is everything after a `--` separator.
-    -   **Execution:** It sets the `KUBECTL_EXTERNAL_DIFF` environment variable to call *itself* in the second mode,
-    passing along the parsed filter arguments. It then executes the target command (e.g., `kubectl diff ...`).
+    -   **Execution:** It sets the `KUBECTL_EXTERNAL_DIFF` environment variable to call *itself* in the second mode, passing along the parsed filter arguments. It then executes the target command (e.g., `kubectl diff ...`).
 
-2.  **Direct Comparision Mode (called by kubectl diff):** This mode is triggered by a special, undocumented flag like `--compare`. It is only ever meant to be called by `kubectl` itself.
+2.  **Internal Mode (Processor):** This mode is triggered by a special, undocumented flag like `--internal-diff-processor`. It is only ever meant to be called by `kubectl` itself.
     -   **Action:** `kubectl` invokes this mode with two arguments: the file path to the "live" resource and the file path to the "local" resource.
     -   **Execution Steps:**
         1.  **(Kind Filtering):** It uses `yq '.kind'` on one of the files to get the resource kind. If the `--kind` filter was passed and this resource's kind does not match, it will echo a message like `INFO: Filtering out kind: Deployment` to `stderr` and **exit with code 0**. This tells `kubectl` that there is "no diff" for this resource, effectively hiding it.
@@ -55,27 +52,24 @@ INTERNAL FLAGS (not for direct use):
   --internal-diff-processor
 ```
 
-To begin with, we could focus on implementing just --yq since it is the most general.
-
 ### Example Walkthrough
 
 **Command:** `kdiff --scope=.spec --kind=Deployment -- kubectl diff -f my-app/`
 
 1.  `kdiff` (User Mode) is executed.
 2.  It parses `--scope=.spec` and `--kind=Deployment`.
-3.  It sets `export KUBECTL_EXTERNAL_DIFF="kdiff --compare --scope=.spec --kind=Deployment" --diff-tool=${USER_SAVED_EXTERNAL_DIFF[@]}`.
+3.  It sets `export KUBECTL_EXTERNAL_DIFF="kdiff --internal-diff-processor --scope=.spec --kind=Deployment"`.
 4.  It executes `kubectl diff -f my-app/`.
 5.  `kubectl` finds a `Service` resource. It calls:
-    `kdiff --compare ... /tmp/live-svc.yaml /tmp/local-svc.yaml`
+    `kdiff --internal-diff-processor ... /tmp/live-svc.yaml /tmp/local-svc.yaml`
 6.  `kdiff` (Internal Mode) sees the kind is `Service`, which does not match `--kind=Deployment`. It prints nothing and exits 0.
 7.  `kubectl` finds a `Deployment`. It calls:
-    `kdiff --compare ... /tmp/live-deploy.yaml /tmp/local-deploy.yaml`
+    `kdiff --internal-diff-processor ... /tmp/live-deploy.yaml /tmp/local-deploy.yaml`
 8.  `kdiff` (Internal Mode) sees the kind is `Deployment`, which matches.
 9.  It creates `temp1.yaml` and `temp2.yaml`.
 10. It runs `yq '.spec' /tmp/live-deploy.yaml > temp1.yaml` and `yq '.spec' /tmp/local-deploy.yaml > temp2.yaml`.
-11. It runs `${USER_SAVED_EXTERNAL_DIFF[@]} temp1.yaml temp2.yaml`, printing the output.
-    - If no initial KUBECTL_EXTERNAL_DIFF was set, uses `diff -u` by default
-12. A `trap` cleans up the temp files.
+11. It runs `diff -u temp1.yaml temp2.yaml`, printing the output.
+12. The `trap` cleans up the temp files.
 
 ---
 
@@ -90,8 +84,13 @@ Once the MVP is stable and functional, the following improvements provide the mo
 
 2.  **Flexible Diff Tool Integration:**
     -   Allow the user to specify their preferred diff tool (`delta`, `difftastic`, `dyff`).
-    -   Either through `KDIFF_TOOL` environment variable.
-    -   Or intelligently detect if the user's original `KUBECTL_EXTERNAL_DIFF` was already set to a fancy diff tool and use that for the final step.
+    -   Introduce a `--diff-tool <tool>` flag and/or a `KDIFF_TOOL` environment variable.
+    -   Intelligently detect if the user's original `KUBECTL_EXTERNAL_DIFF` was already set to a fancy diff tool and use that for the final step.
+
+3.  **Improved `argocd diff` Handling:**
+    -   `argocd diff` does not use `KUBECTL_EXTERNAL_DIFF`. It prints a diff stream directly.
+    -   Modify `kdiff` to detect if the wrapped command is `argocd diff`.
+    -   If so, instead of setting `KUBECTL_EXTERNAL_DIFF`, it should run `argocd diff` and pipe its output to a *parser* function that can apply `--kind` filtering on the diff headers *after the fact*. This is a post-processing step, not a pre-processing one.
 
 4.  **Packaging and Distribution:**
     -   Create a simple `Makefile` for `install` and `uninstall`.
