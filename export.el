@@ -3,4 +3,4 @@
 (with-current-buffer (find-file-noselect "notes.org")
   (goto-char (point-min))
   (when (search-forward-regexp "Context" nil t)
-    (org-export-to-file 'md "CLAUDE.md" nil t)))
+    (org-export-to-file 'md (concat (getenv "AGENT") ".md") nil t)))

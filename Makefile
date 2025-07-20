@@ -1,5 +1,5 @@
 # Makefile for kdiff project
-AGENT=CLAUDE
+AGENT=GEMINI
 SCRIPT_NAME = kdiff
 ORG_FILE=notes.org
 HEADING_TEXT=Context
@@ -13,5 +13,5 @@ context: $(AGENT).md
 
 $(AGENT).md: notes.org
 	@echo "--> Exporting subtree '$(HEADING_TEXT)' from notes.org to $@..."
-	@emacs -batch --no-init-file --no-site-file  --load export.el
+	@AGENT=$(AGENT) emacs -batch --no-init-file --no-site-file  --load export.el
 	@echo "--> Done."
