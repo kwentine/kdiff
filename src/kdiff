@@ -7,49 +7,71 @@ SCRIPT_NAME="kdiff"
 # Help message
 show_help() {
   cat << EOF
-${SCRIPT_NAME} v${VERSION} - kubectl/argocd diff with yq pre-processing
+${SCRIPT_NAME} v${VERSION} - Kubernetes diffs with pluggable pre-processing
 
 USAGE:
     ${SCRIPT_NAME} [FLAGS] -- <COMMAND>
 
 FLAGS:
-    --yq                 yq expression to apply
-    --diff-cmd           Command to use to perform the diff.
+    --yq                 yq expression to apply. A shorthand for --transform 'yq <expr>'
+    --transform          Preprocessing command
+    --compare            Comparison (diff) command
                          Defaults to KUBECTL_EXRTERNAL_DIFF
+    --preset             Name of a preset to use. A matchin directory must exist in HOME/.config/kdiff
+                         Alternatively, provide an absolute path to a preset directory, e.g. /tmp/test
     --help               Show this help message
 
-EXAMPLES:
+INTERNAL OPTIONS
+    --runtime-dir        The directory where runtime presets should be created. Defaults to XDG_RUNTIME_DIR/kdiff.
+                         Used when ${SCRIPT_NAME} is called by kubectl to remember user options passed interactively.
+                         For example, 'kdiff --yq .spec -- -f mypod.yaml' will create a preset kdiff-1234
+                         in the runtime directory, with transform 'yq ".spec"',
+                         and set KUBECTL_EXTERNAL_DIFF="kdiff --runtime-dir <runtime dir> --preset kdiff-1234",
+                         in the kubectl environment.
+
+EXAMPLES OF INTERACTIVE USE:
     # Diff only deployment specs
-    # All arguments after -- are passed to kubectl diff
+    # All arguments after -- are forwarded to kubectl diff
+    # The value of KUBECTL_EXTERNAL_DIFF will be used as default compare tool
     ${SCRIPT_NAME} --yq=.spec -- -f deployment.yaml
 
-    # Remove noisy annotations before diffing
-    ${SCRIPT_NAME} --yq 'del(.metadata.annotations."kubectl.kubernetes.io/last-applied-configuration")' -- kubectl diff -f .
+    # Remove noisy fields
+    ${SCRIPT_NAME} --yq 'del(.metadata.managedFields, .status)' -- -Rf .
 
-INTEGRATION:
-    Optionally, directly set as KUBECTL_EXTERNAL_DIFF.
-    Assuming that you have in the ${HOME}/.config/kdiff/dyff-no-clutter directory:
-      - A file named 'yq' containing a yq expression
-      - An executable file 'diff' following the KUBECTL_EXTERNAL_DIFF calling convention
+    # Use with custom transform and compare commands
+    ${SCRIPT_NAME} --transform 'kubectl neat -f -' --compare 'dyff between' -- -f deploy.yaml
 
-    Then you can:
+    # Use presets.
+    # Assuming that you have in HOME/.config/kdiff/diff-no-clutter:
+    #   - An executable file named 'transform' accepting a yaml stream on stdin
+    #   - An executable file name 'compare' accepting two argumens <left> and <right>
+    # Then have kdiff use the combination by:
+    ${SCRIPT_NAME} --preset diff-no-clutter -- -k overlays/production
 
-    export KUBECTL_EXTERNAL_DIFF="${SCRIPT_NAME} --preset ${HOME}/.config/kdiff/dyff-no-clutter"
+INTEGRATION AS KUBECTL_EXTERNAL_DIFF:
+    You can directly set kdiff as KUBECTL_EXTERNAL_DIFF.
+    export KUBECTL_EXTERNAL_DIFF="${SCRIPT_NAME} --preset dyff-no-clutter"
     kubectl diff -f myapp.yaml
 EOF
 }
 
+
 # Parse command line arguments using GNU getopt
 parse_args() {
-  # Use getopt to parse and normalize arguments
-  local PARSED
-  if ! PARSED=$(getopt --options h,y,d,p,r --long help,yq:,diff-cmd:,preset:,runtime-dir: -n "${SCRIPT_NAME}" -- "$@"); then
+
+  if ! command -v getopt >/dev/null; then
+        echo "Error: GNU getopt is required but not found" >&2
+        exit 1
+  fi
+
+  local opts
+  if ! opts=$(getopt --options h,y,c,t,p,r --long help,yq:,compare:,transform:,preset:,runtime-dir: -n "${SCRIPT_NAME}" -- "$@"); then
     echo "Error: Unable to parse arguments: $@"  >&2
     exit 1
   fi
 
   # Set the normalized arguments
-  eval set -- "${PARSED}"
+  eval set -- "${opts}"
 
   # Parse the normalized arguments
   while true; do
@@ -58,21 +80,25 @@ parse_args() {
         show_help
         exit 0
         ;;
-      '-y'|--yq)
-        YQ_EXPRESSION="$2"
+      '-y'|'--yq')
+        yq_expr="$2"
         shift 2
         ;;
-      '-d'|'--diff-cmd')
-        DIFF_CMD="$2"
+      '-t'|'--transform')
+        transform="$2"
+        shift 2
+        ;;
+      '-c'|'--compare')
+        compare="$2"
         shift 2
         ;;
       '-p'|'--preset')
-        INTERACTIVE=0
-        PRESET="$2"
+        interactive=0
+        preset="$2"
         shift 2
         ;;
       '-r'|'--runtime-dir')
-        RUNTIME_DIR="$2"
+        runtime_dir="$2"
         shift 2
         ;;
       '--')
@@ -85,8 +111,14 @@ parse_args() {
     esac
   done
 
+  # TODO: Robustly detect if we are run interactively or as KUBECTL_EXTERNAL_DIFF
+  #       Set 'interactive' variable accordingly
+
+
   # Store remaining arguments (file paths)
-  KUBECTL_ARGS=("$@")
+  kubectl_args=("$@")
+
+
 }
 
 # Perform kubectl internal call
@@ -126,37 +158,9 @@ handle_internal_call() {
 #   YQ_EXPR  The user-provided yq expression
 #   DIFF_CMD The diff command to use
 handle_interactive_call() {
-  local yq_expr="$1"
-  local diff_cmd="$2"
-  local runtime_dir="$(create_runtime_dir)"
-  populate_runtime_dir "${runtime_dir}" "${yq_expr}" "${diff_cmd}"
-  KUBECTL_EXTERNAL_DIFF="kdiff --run ${runtime_dir##*/}" kubectl diff "${KUBECTL_ARGS[@]}"
+  :
 }
 
-# Resolve preset directory path
-#
-# Given the runtime directory basename,
-# locate it in XDG_RUNTIME_DIR,
-# or as a debugging fallback in ${CWD}/run.
-#
-# Arguments:
-#  RUNTIME_BASENAME  Base name of the runtime directory
-#
-# Output:
-#   Absolute pathe the the runtime directory
-resolve_runtime_dir {
-  echo "${XDG_RUNTIME_DIR:-/tmp}"/"${1:-kdiff-run}"
-}
-
-# Load yq expression from runtime file
-load_yq_expr() {
-  local yq_expr
-  if ! yq_expr="$(cat ${1:-/dev/null})"; then
-    echo "Error: yq file ${yq_file} not found" >&2
-    return 1
-  fi
-  echo "${yq_expr:-'.'}"
-}
 
 # Apply yq expression to source and save top dest
 transform() {
@@ -171,18 +175,140 @@ transform() {
   fi
 }
 
+
+# Stage a file for comparison
+# Apply transform and save the output with the same basename,
+# in the staging directory
+stage_file() {
+    local src_file="$1"
+    local staging_dir="$2"
+    local transform_cmd="$3"
+
+    local basename=$(basename "$src_file")
+    local dest_file="${staging_dir}/$basename"
+
+    if [[ -n "$transform_cmd" ]] && [[ -x "$transform_cmd" ]]; then
+      # TODO Should we execute transform_cmd or do 'bash ${transform_cmd}' ?
+      #      Perhaps encapsulate this decision in 'do_transform <src> <dest> <path/to/tansform cmd>'
+      if ! "$transform_cmd" < "$src_file" > "$dest_file"; then
+        echo "Warning: Transform failed for ${basename}, using original" >&2
+        cp "$src_file" "$dest_file"
+      fi
+    else
+      cp "$src_file" "$dest_file"
+    fi
+}
+
+
+# Stage file, or all files in a directory, by delegating to stage_file
+#
+# We don't know if the argument passed by the upstream tool will be a file or a directory.
+# kubectl passes a directory with all files to diff inside; argocd diff passes a single file.
+stage_all() {
+    local src_path="$1"
+    local staging_dir="$2"
+    local transform_cmd="$3"
+
+    mkdir -p "$staging_dir"
+
+    # TODO Ensure this is robust enough.
+    # May break with weird file names, but we trust kubectl to be sane.
+    local file
+    while read -r file; do
+      [[ -f "$file" ]] && stage_file "$file" "$staging_dir" "$transform_cmd"
+    done <(ls -1 "$src_path")
+
+    if [[ -f "$src_path" ]] || [[ -d "$src_path" ]]; then
+      # TODO Ensure this is robust enough.
+      # May break with weird file names, but we trust kubectl to be sane.
+      local file
+      while read -r file; do
+        [[ -f "$file" ]] && stage_file "$file" "$staging_dir" "$transform_cmd"
+      done <(ls -1 "$src_path")
+    else
+        echo "Error: Path is neither file nor directory: $src_path" >&2
+        return 1
+    fi
+}
+
+
+# Load a preset given by name
+# Sets the variables transform_cmd and compare_cmd to absolute executable paths
+load_presets() {
+  local preset_name="$1"
+  # Use preset dir if provided on the command line
+  local preset_dir="${preset_dir:-${XDG_RUNTIME_DIR}}/${preset_name}"
+  if [[ ! -d "${preset_dir" ]]; then
+    echo "Error: Preset directory not found: $preset_dir" >&2
+    exit 1
+  fi
+
+  [[ -x "$preset_name/transform" ]] && transform_cmd="$preset_name/transform"
+  [[ -x "$preset_name/compare" ]] && compare_cmd="$preset_name/compare"
+}
+
+# Create the staging directory where we store the transformed files prior to comparison
+# TODO Maybe not worth isolating in a function.
+create_staging_dir() {
+  local staging_dir$(mktemp -d -t kdiff-staging-XXXXXX)
+  trap 'rm -rf "${staging_dir}"' EXIT INT TERM
+  echo "${staging_dir}"
+}
+
+# Create a default runtime preset directory, capturing the interactive call arguments.
+create_runtime_preset() {
+    local pid="$$"
+
+    local preset_dir="${runtime_dir:-${XDG_RUNTIME_DIR}}/kdiff/preset-${pid}"
+    mkdir -p "${preset_dir}"
+
+    touch "$preset_dir/transform"
+    chmod +x "$preset_dir/transform"
+    touch "${preset_dir}/compare"
+    chmod +x "$preset_dir/compare"
+    echo "${preset_dir}"
+}
+
+# Save transform command to runtime preset
+# The --transform command line argument takes precedence over --yq
+# Fall back to cat
+compile_transform() {
+  local preset_dir="${1}"
+  local yq_expr="${2}"
+  if [[ -n "${yq_expr}" ]]; then
+    transform="yq '${yq_expr}}'"
+  fi
+  if [[ -z "${tansform}" ]]; then
+    transform="cat -"
+  fi
+  cat <<EOF > "$preset_dir/transform"
+#!/bin/bash
+${transform}
+EOF
+}
+
+# Save compare command to runtime preset
+# The --compare command line argument takes precedence
+# Fall back to KUBECTL_EXTERNAL_DIFF if set, otherwise good'ol diff
+compile_compare() {
+  local preset_dir="${1}"
+  if [[ -z $compare ]]; then
+    compare="${KUBECTL_EXTERNAL_DIFF:-diff -u N}"
+  fi
+  printf '#!/bin/bash\n%s $@"\n' "${compare}" > "$preset_dir/compare"
+}
+
 # Main function
 main() {
   # Setup defaults
-  local YQ_EXPRESSION="."
-  local DIFF_CMD="diff -u -N"
-  local INTERACTIVE=0
-  local RUNTIME_DIR="${XDG_RUNTIME_DIR:-/tmp}"
+  local yq_expr="."
+  local compare="diff -u -n"
+  local transform="cat -"
+  local interactive=0
+  local runtime_dir="${XDG_RUNTIME_DIR:-/tmp}"
 
   parse_args "$@"
-
-  echo "INTERNAL_MODE=${INTERNAL_MODE}"
-  echo "${KUBECTL_ARGS[@]"
+  # TODO Echo arguments for debugging
 }
 
 # Run main function with all arguments
