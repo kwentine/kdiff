@@ -1,48 +1,34 @@
 #!/bin/bash
 set -euo pipefail
 
-# kdiff - Enhanced kubectl/argocd diff with filtering and preprocessing
-# Usage: kdiff [FLAGS] -- <COMMAND>
-#        kdiff --internal-diff-processor <file1> <file2>
-
 VERSION="0.1.0"
 SCRIPT_NAME="kdiff"
 
-# Global variables for configuration
-KIND_FILTER=""
-SCOPE_FILTER=""
 YQ_EXPRESSION=""
 DIFF_CMD=""
-INTERNAL_MODE=false
+INTERNAL_MODE=0
 
 # Help message
 show_help() {
-    cat << EOF
-${SCRIPT_NAME} v${VERSION} - Enhanced kubectl/argocd diff with filtering
+  cat << EOF
+${SCRIPT_NAME} v${VERSION} - kubectl/argocd diff with yq pre-processing
 
 USAGE:
     ${SCRIPT_NAME} [FLAGS] -- <COMMAND>
 
 FLAGS:
-    --kind=<kinds>        Only show diffs for specified resource kinds
-                         (e.g., Pod,Service,po,svc). Case-insensitive.
-    --scope=<yq_path>     Shortcut to diff only a specific part of resources
-                         (e.g., .spec, .metadata.labels)
-    --yq=<expression>     Apply arbitrary yq expression to both manifests
+    --yq                 yq expression to apply
+    --diff-cmd           Command to use to perform the diff.
+                         Defaults to KUBECTL_EXRTERNAL_DIFF
     --help               Show this help message
 
 EXAMPLES:
     # Diff only deployment specs
-    ${SCRIPT_NAME} --scope=.spec -- kubectl diff -f deployment.yaml
-
-    # Show diffs for services and pods only
-    ${SCRIPT_NAME} --kind=svc,po -- kubectl diff -k overlays/staging
+    # All arguments after -- are passed to kubectl diff
+    ${SCRIPT_NAME} --yq=.spec -- -f deployment.yaml
 
     # Remove noisy annotations before diffing
     ${SCRIPT_NAME} --yq 'del(.metadata.annotations."kubectl.kubernetes.io/last-applied-configuration")' -- kubectl diff -f .
-
-    # Use with argocd
-    ${SCRIPT_NAME} --kind=Deployment -- argocd diff myapp
 
 INTEGRATION:
     Set as KUBECTL_EXTERNAL_DIFF for automatic usage:
@@ -54,229 +40,127 @@ EOF
 
 # Parse command line arguments using GNU getopt
 parse_args() {
-    # Use getopt to parse and normalize arguments
-    local PARSED
-    if ! PARSED=$(getopt -o h --long help,compare,scope:,diff-cmd:,kind:,yq: -n "$0" -- "$@"); then
-        echo "Error: Invalid arguments" >&2
-        echo "Use --help for usage information" >&2
-        exit 1
-    fi
+  # Use getopt to parse and normalize arguments
+  local PARSED
+  if ! PARSED=$(getopt --options h --long help,yq:,diff-cmd: -n "${SCRIPT_NAME}" -- "$@"); then
+    echo "Error: Unable to parse arguments: $@"  >&2
+    exit 1
+  fi
 
-    # Set the normalized arguments
-    eval set -- "${PARSED}"
+  # Set the normalized arguments
+  eval set -- "${PARSED}"
 
-    # Parse the normalized arguments
-    while [[ $# -gt 0 ]]; do
-        case $1 in
-            -h|--help)
-                show_help
-                exit 0
-                ;;
-            --compare)
-                INTERNAL_MODE=true
-                shift
-                ;;
-            --kind)
-                KIND_FILTER="$2"
-                shift 2
-                ;;
-            --scope)
-                SCOPE_FILTER="$2"
-                shift 2
-                ;;
-            --yq)
-                YQ_EXPRESSION="$2"
-                shift 2
-                ;;
-            --diff-cmd)
-                DIFF_CMD="$2"
-                shift 2
-                ;;
-            --)
-                shift
-                break
-                ;;
-            *)
-                break
-                ;;
-        esac
-    done
+  # Parse the normalized arguments
+  while true; do
+    case "$1" in
+      -h|--help)
+        show_help
+        exit 0
+        ;;
+      --compare)
+        INTERNAL_MODE=1
+        shift
+        ;;
+      --yq)
+        YQ_EXPRESSION="$2"
+        shift 2
+        ;;
+      --diff-cmd)
+        DIFF_CMD="$2"
+        shift 2
+        ;;
+      --run)
+        RUNTIME_DIR="$2"
+        shift 2
+        ;;
+      --)
+        shift
+        break
+        ;;
+      *)
+        echo "Unrecognized argument: $1" >&2
+        ;;
+    esac
+  done
 
-    # Store remaining arguments (file paths)
-    REMAINING_ARGS=("$@")
+  # Store remaining arguments (file paths)
+  KUBECTL_ARGS=("$@")
 }
 
-# Compare two files with filtering and transformations
-compare_files() {
-    local file1="$1"
-    local file2="$2"
-
-    # TODO: Refactor duplicate logic
-    # TODO: Find a more robust way of using the single file in the directory given by kubectl
-    # Validate input files exist
-    if [[ ! -f "${file1}" ]]; then
-      if [[ -d "${file1}" ]]; then
-        file1="${file1}"/$(ls -1 "${file1}")
-      else
-        echo "Error: File not found: ${file1}" >&2
-        exit 1
-      fi
-    fi
-    # Validate input files exist
-    if [[ ! -f "${file2}" ]]; then
-      if [[ -d "${file2}" ]]; then
-        file2="${file2}"/$(ls -1 "${file2}")
-      else
-        echo "Error: File not found: ${file2}" >&2
-        exit 1
-      fi
-    fi
-
-    # Step 1: Kind filtering
-    if [[ -n "${KIND_FILTER}" ]]; then
-        local resource_kind
-        if resource_kind=$(yq '.kind' "${file1}" 2>/dev/null); then
-            if ! should_include_kind "${resource_kind}"; then
-                echo "INFO: Filtering out kind: ${resource_kind}" >&2
-                exit 0  # Tell kubectl "no diff" for this resource
-            fi
-        else
-            echo "Warning: Could not extract .kind from ${file1}" >&2
-        fi
-    fi
-
-    # Step 2: Create temporary files for transformation
-    local temp1 temp2
-    temp1=$(mktemp "${TMPDIR:-/tmp}/kdiff.XXXXXX")
-    temp2=$(mktemp "${TMPDIR:-/tmp}/kdiff.XXXXXX")
-
-    # Setup cleanup trap
-    trap 'rm -f "$temp1" "$temp2"' EXIT
-
-    # Step 3: Apply transformations
-    if ! apply_transformations "${file1}" "${temp1}"; then
-        echo "Error: Failed to transform ${file1}" >&2
-        exit 1
-    fi
-
-    if ! apply_transformations "${file2}" "${temp2}"; then
-        echo "Error: Failed to transform ${file2}" >&2
-        exit 1
-    fi
-
-    # Step 4: Run diff
-    local diff_tool="${DIFF_CMD:-diff -u}"
-    ${diff_tool} "${temp1}" "${temp2}"
-
-    # Note: diff exit code is preserved (0=no diff, 1=diff found)
+# Perform kubectl internal call
+#
+# Apply the yq transformation to left and right operands,
+# and execute diff command on the result.
+# The yq expression to use for preprocessing and the diff command are saved in a runtime directory,
+# given as first argument.
+# A staging area must be setup to avoid mangling the original files.#
+# Arguments:
+#   RUNTIME_DIR  The runtime directory with yq expression and diff command to use
+#   LEFT         The left-hand side argument given by kubectl. Likely a directory
+#   RIGHT        The right-hand side argument given by kubectl. Likely a directory
+handle_internal_call() {
+  :
 }
 
-# Check if a resource kind should be included based on KIND_FILTER
-should_include_kind() {
-    local resource_kind="$1"
-
-    if [[ -z "${KIND_FILTER}" ]]; then
-        return 0  # No filter means include all
-    fi
-
-    # Convert to lowercase for case-insensitive comparison
-    local kind_lower="${resource_kind,,}"
-    local filter_lower="${KIND_FILTER,,}"
-
-    # Split comma-separated kinds and check each
-    IFS=',' read -ra kinds <<< "${filter_lower}"
-    for kind in "${kinds[@]}"; do
-        kind=$(echo "${kind}" | xargs)  # Trim whitespace
-
-        # Check exact match or common abbreviations
-        case "${kind_lower}" in
-            "${kind}"|"${kind}s")  # Match exact or plural
-                return 0
-                ;;
-            *)
-                ;;
-        esac
-
-        # Check common Kubernetes abbreviations
-        case "${kind}" in
-            "po"|"pod")
-                [[ "${kind_lower}" == "pod" ]] && return 0
-                ;;
-            "svc"|"service")
-                [[ "${kind_lower}" == "service" ]] && return 0
-                ;;
-            "deploy"|"deployment")
-                [[ "${kind_lower}" == "deployment" ]] && return 0
-                ;;
-            "cm"|"configmap")
-                [[ "${kind_lower}" == "configmap" ]] && return 0
-                ;;
-            *)
-                ;;
-        esac
-    done
-
-    return 1  # Kind not found in filter
+# Setup ourselves as KUBECTL_EXTERNAL_DIFF and call kubectl
+# We must save user-provided yq expression and diff command,
+# because kubectl sanitizes KUBECTL_EXTERNAL_DIFF arguments.
+#
+# Arguments:
+#   YQ_EXPR  The user-provided yq expression
+#   DIFF_CMD The diff command to use
+handle_interactive_call() {
+  local yq_expr="$1"
+  local diff_cmd="$2"
+  local runtime_dir="$(create_runtime_dir)"
+  populate_runtime_dir "${runtime_dir}" "${yq_expr}" "${diff_cmd}"
+  KUBECTL_EXTERNAL_DIFF="kdiff --run ${runtime_dir##*/}" kubectl diff "${KUBECTL_ARGS[@]}"
 }
 
-# Apply yq transformations to a file
-apply_transformations() {
-    local input_file="$1"
-    local output_file="$2"
 
-    # Build yq expression
-    local yq_expr="."
+# Resolve runtime directory path
+#
+# Given the runtime directory basename,
+# locate it in XDG_RUNTIME_DIR,
+# or as a debugging fallback in ${CWD}/run.
+#
+# Arguments:
+#  RUNTIME_BASENAME  Base name of the runtime directory
+#
+# Output:
+#   Absolute pathe the the runtime directory
+resolve_runtime_dir {
+  echo "${XDG_RUNTIME_DIR:-/tmp}"/"${1:-kdiff-run}"
+}
 
-    # Apply scope filter if specified
-    if [[ -n "${SCOPE_FILTER}" ]]; then
-        yq_expr="${SCOPE_FILTER}"
-    fi
 
-    # Apply custom yq expression if specified
-    if [[ -n "${YQ_EXPRESSION}" ]]; then
-        if [[ "${yq_expr}" == "." ]]; then
-            yq_expr="${YQ_EXPRESSION}"
-        else
-            # Combine scope and custom expression
-            yq_expr="${yq_expr} | ${YQ_EXPRESSION}"
-        fi
-    fi
 
-    # Apply transformation
-    if ! yq "${yq_expr}" "${input_file}" > "${output_file}" 2>/dev/null; then
-        echo "Error: yq transformation failed: ${yq_expr}" >&2
-        return 1
-    fi
+# Apply yq transformation found in FILE
+transform() {
+  local yq_file="$1"
+  local src="$2"
+  local dest="${3:-${2/.yaml/.clean.yaml}}"
 
-    return 0
+  # Build yq expression
+  # TODO: See if yq supports reading script from a file
+  local yq_expr
+  if ! yq_expr="$(cat ${yq_file})"; then
+    echo "Error: yq file ${yq_file} not found" >&2
+    yq_expr='.'
+  fi
+
+  # Apply transformation
+  if ! yq "${yq_expr}" "${src}" > "${dest}" 2>/dev/null; then
+    echo "Error: yq transformation failed: ${yq_expr}" >&2
+    exit 1
+  fi
 }
 
 # Main function
 main() {
-    parse_args "$@"
-    check_dependencies
-
-    if [[ "${INTERNAL_MODE}" == true ]]; then
-        # Internal mode: called by kubectl with two file arguments
-        if [[ ${#REMAINING_ARGS[@]} -lt 2 ]]; then
-            echo "Error: Internal mode requires two file arguments" >&2
-            exit 1
-        fi
-
-        compare_files "${REMAINING_ARGS[0]}" "${REMAINING_ARGS[1]}"
-    else
-        # User-facing mode: wrapper that sets up KUBECTL_EXTERNAL_DIFF
-        if [[ ${#REMAINING_ARGS[@]} -eq 0 ]]; then
-            echo "Error: No command specified after --" >&2
-            echo "Use --help for usage information" >&2
-            exit 1
-        fi
-
-        echo "User-facing mode not yet implemented" >&2
-        echo "Would execute: ${REMAINING_ARGS[*]}" >&2
-        echo "With filters: kind='${KIND_FILTER}' scope='${SCOPE_FILTER}' yq='${YQ_EXPRESSION}'" >&2
-        exit 1
-    fi
+  parse_args "$@"
+  echo "INTERNAL_MODE=${INTERNAL_MODE}"
+  echo "${KUBECTL_ARGS[@]"
 }
 
 # Run main function with all arguments
