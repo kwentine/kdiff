@@ -1,0 +1,7 @@
+#!/bin/bash
+# Inspect the arguments passed by kubectl
+echo "Argument list: $@"
+echo "Left: $1"
+ls -1 $1
+echo "Right: $2"
+ls -1 $2

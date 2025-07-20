@@ -4,10 +4,6 @@ set -euo pipefail
 VERSION="0.1.0"
 SCRIPT_NAME="kdiff"
 
-YQ_EXPRESSION=""
-DIFF_CMD=""
-INTERNAL_MODE=0
-
 # Help message
 show_help() {
   cat << EOF
@@ -42,7 +38,7 @@ EOF
 parse_args() {
   # Use getopt to parse and normalize arguments
   local PARSED
-  if ! PARSED=$(getopt --options h --long help,yq:,diff-cmd: -n "${SCRIPT_NAME}" -- "$@"); then
+  if ! PARSED=$(getopt --options h,y,d,p,r --long help,yq:,diff-cmd:,preset:,runtime-dir: -n "${SCRIPT_NAME}" -- "$@"); then
     echo "Error: Unable to parse arguments: $@"  >&2
     exit 1
   fi
@@ -53,27 +49,28 @@ parse_args() {
   # Parse the normalized arguments
   while true; do
     case "$1" in
-      -h|--help)
+      '-h'|'--help')
         show_help
         exit 0
         ;;
-      --compare)
-        INTERNAL_MODE=1
-        shift
-        ;;
-      --yq)
+      '-y'|--yq)
         YQ_EXPRESSION="$2"
         shift 2
         ;;
-      --diff-cmd)
+      '-d'|'--diff-cmd')
         DIFF_CMD="$2"
         shift 2
         ;;
-      --run)
+      '-p'|'--preset')
+        INTERACTIVE=0
+        PRESET="$2"
+        shift 2
+        ;;
+      '-r'|'--runtime-dir')
         RUNTIME_DIR="$2"
         shift 2
         ;;
-      --)
+      '--')
         shift
         break
         ;;
@@ -93,9 +90,20 @@ parse_args() {
 # and execute diff command on the result.
 # The yq expression to use for preprocessing and the diff command are saved in a runtime directory,
 # given as first argument.
-# A staging area must be setup to avoid mangling the original files.#
+# A staging area must be setup to avoid mangling the original files.
+#
+# Example of an internal call
+#
+#   kdiff --preset kdiff-1234 /tmp/LIVE-3456 /tmp/MERGED-55678
+#
+# Example of an internal call simulated for test purposes.
+# Assumes that we have setup the /tmp/test directory.
+# The PRESET argument will then be '/tmp/test'
+#
+#   kdiff --runtime-dir /tmp --preset test foo.yaml bar.yaml
+#
 # Arguments:
-#   RUNTIME_DIR  The runtime directory with yq expression and diff command to use
+#   PRESET       The path to the directory with yq expression and diff command to use
 #   LEFT         The left-hand side argument given by kubectl. Likely a directory
 #   RIGHT        The right-hand side argument given by kubectl. Likely a directory
 handle_internal_call() {
@@ -105,6 +113,9 @@ handle_internal_call() {
 # Setup ourselves as KUBECTL_EXTERNAL_DIFF and call kubectl
 # We must save user-provided yq expression and diff command,
 # because kubectl sanitizes KUBECTL_EXTERNAL_DIFF arguments.
+#
+# Example of an interactive call
+#   kdiff --yq='del(.metadata.annotations) --diff-cmd='dyff' -- -f mypod.yaml
 #
 # Arguments:
 #   YQ_EXPR  The user-provided yq expression
@@ -117,8 +128,7 @@ handle_interactive_call() {
   KUBECTL_EXTERNAL_DIFF="kdiff --run ${runtime_dir##*/}" kubectl diff "${KUBECTL_ARGS[@]}"
 }
 
-
-# Resolve runtime directory path
+# Resolve preset directory path
 #
 # Given the runtime directory basename,
 # locate it in XDG_RUNTIME_DIR,
@@ -133,21 +143,21 @@ resolve_runtime_dir {
   echo "${XDG_RUNTIME_DIR:-/tmp}"/"${1:-kdiff-run}"
 }
 
+# Load yq expression from runtime file
+load_yq_expr() {
+  local yq_expr
+  if ! yq_expr="$(cat ${1:-/dev/null})"; then
+    echo "Error: yq file ${yq_file} not found" >&2
+    return 1
+  fi
+  echo "${yq_expr:-'.'}"
+}
 
-
-# Apply yq transformation found in FILE
+# Apply yq expression to source and save top dest
 transform() {
-  local yq_file="$1"
+  local yq_expr="$1"
   local src="$2"
   local dest="${3:-${2/.yaml/.clean.yaml}}"
-
-  # Build yq expression
-  # TODO: See if yq supports reading script from a file
-  local yq_expr
-  if ! yq_expr="$(cat ${yq_file})"; then
-    echo "Error: yq file ${yq_file} not found" >&2
-    yq_expr='.'
-  fi
 
   # Apply transformation
   if ! yq "${yq_expr}" "${src}" > "${dest}" 2>/dev/null; then
@@ -158,7 +168,14 @@ transform() {
 
 # Main function
 main() {
+  # Setup defaults
+  local YQ_EXPRESSION="."
+  local DIFF_CMD="diff -u -N"
+  local INTERACTIVE=0
+  local RUNTIME_DIR="${XDG_RUNTIME_DIR:-/tmp}"
+
   parse_args "$@"
+
   echo "INTERNAL_MODE=${INTERNAL_MODE}"
   echo "${KUBECTL_ARGS[@]"
 }
