@@ -21,14 +21,6 @@ FLAGS:
                          Alternatively, provide an absolute path to a preset directory, e.g. /tmp/test
     --help               Show this help message
 
-INTERNAL OPTIONS
-    --runtime-dir        The directory where runtime presets should be created. Defaults to XDG_RUNTIME_DIR/kdiff.
-                         Used when ${SCRIPT_NAME} is called by kubectl to remember user options passed interactively.
-                         For example, 'kdiff --yq .spec -- -f mypod.yaml' will create a preset kdiff-1234
-                         in the runtime directory, with transform 'yq ".spec"',
-                         and set KUBECTL_EXTERNAL_DIFF="kdiff --runtime-dir <runtime dir> --preset kdiff-1234",
-                         in the kubectl environment.
-
 EXAMPLES OF INTERACTIVE USE:
     # Diff only deployment specs
     # All arguments after -- are forwarded to kubectl diff
@@ -65,7 +57,7 @@ parse_args() {
   fi
 
   local opts
-  if ! opts=$(getopt --options h,y,c,t,p,r --long help,yq:,compare:,transform:,preset:,runtime-dir: -n "${SCRIPT_NAME}" -- "$@"); then
+  if ! opts=$(getopt --options h,y,c,t,p --long help,yq:,compare:,transform:,preset: -n "${SCRIPT_NAME}" -- "$@"); then
     echo "Error: Unable to parse arguments: $@"  >&2
     exit 1
   fi
@@ -94,10 +86,6 @@ parse_args() {
         ;;
       '-p'|'--preset')
         preset="$2"
-        shift 2
-        ;;
-      '-r'|'--runtime-dir')
-        runtime_dir="$2"
         shift 2
         ;;
       '--')
@@ -179,20 +167,20 @@ handle_internal_call() {
 #   YQ_EXPR  The user-provided yq expression
 #   DIFF_CMD The diff command to use
 handle_interactive_call() {
-  local preset_path
+  local preset_name
   if [[ -n "${preset}" ]]; then
     # If a preset is specified, use it directly.
-    preset_path="${preset}"
+    preset_name="${preset}"
   else
     # Otherwise, create a runtime preset for the ad-hoc transform/compare flags.
-    preset_path=$(create_runtime_preset)
+    preset_name=$(create_runtime_preset)
   fi
 
   # Get the absolute path of the currently running script
   local script_path
   script_path=$(readlink -f "$0")
 
-  export KUBECTL_EXTERNAL_DIFF="${script_path} --preset ${preset_path}"
+  export KUBECTL_EXTERNAL_DIFF="${script_path} --preset ${preset_name}"
 
   # Unset variables that might interfere with the internal call
   unset yq_expr transform compare preset
@@ -269,19 +257,23 @@ stage_all() {
 }
 
 
-# Load a preset given by name or path
+# Load a preset given by name
+# We need to resolve the name relative to runtime or configuration directory.
+# It is not possible to give an absolute path,
+# because this would not pass kubectl argument sanitization.
 # Sets the variables transform_cmd and compare_cmd to absolute executable paths
 load_presets() {
   local preset_name="$1"
   local preset_dir=""
 
-  # If preset_name is an absolute path, use it directly
-  if [[ "${preset_name}" == /* ]]; then
-    preset_dir="${preset_name}"
+  # User configuration takes precedence
+  if [[ -d "${config_dir}/${preset_name}" ]]; then
+    preset_dir="${config_dir}/${preset_name}"
+  elif [[ -d "${runtime_dir}/${preset_name}" ]]; then
+    preset_dir="${runtime_dir}/${preset_name}"
   else
-    # Otherwise, look in the standard config location
-    local config_home="${XDG_CONFIG_HOME:-${HOME}/.config}"
-    preset_dir="${config_home}/kdiff/${preset_name}"
+    echo "Error: Preset '${preset_name}' not found in ${config_dir} or ${runtime_dir}" >&2
+    exit 1
   fi
 
   if [[ ! -d "${preset_dir}" ]]; then
@@ -306,9 +298,6 @@ load_presets() {
 create_staging_dir() {
   local staging_dir
   staging_dir=$(mktemp -d -t kdiff-staging-XXXXXX)
-  # TODO Since create_staging _dir is called twice the first trap will be lost
-  #      and one directory left behind.
-  # trap 'rm -rf "${staging_dir}"' EXIT INT TERM
   staging_dirs+=("${staging_dir}")
   echo "${staging_dir}"
 }
@@ -322,16 +311,17 @@ cleanup_staging_dirs() {
 
 
 # Create a default runtime preset directory, capturing the interactive call arguments.
+# TODO: How do we cleanup all these runtime directories ?
 create_runtime_preset() {
-    local pid="$$"
-    local preset_dir="${runtime_dir}/kdiff/preset-${pid}"
+  local preset_name="preset-$$"
+  local preset_dir="${runtime_dir}/${preset_name}"
 
-    mkdir -p "${preset_dir}"
+  mkdir -p "${preset_dir}"
 
-    compile_transform "${preset_dir}" "${yq_expr}"
-    compile_compare "${preset_dir}"
+  compile_transform "${preset_dir}" "${yq_expr}"
+  compile_compare "${preset_dir}"
 
-    echo "${preset_dir}"
+  echo "${preset_name}"
 }
 
 # Save transform command to runtime preset
@@ -402,9 +392,9 @@ main() {
   local transform=""
   local preset=""
   local interactive=0
-  local runtime_dir="${XDG_RUNTIME_DIR:-/tmp}"
+  local runtime_dir="${XDG_RUNTIME_DIR:-/tmp}/kdiff"
+  local config_dir="${XDG_CONFIG_HOME:-${HOME}/.config/kdiff}"
   local kubectl_args=()
-
   local staging_dirs=()
   trap 'cleanup_staging_dirs' EXIT INT TERM
 
