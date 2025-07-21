@@ -341,7 +341,8 @@ compile_transform() {
 
   # --yq sets a yq expression
   if [[ -n "${yq_expr}" ]]; then
-    cmd="yq '${yq_expr}'"
+    # Use printf to properly quote the expression
+    cmd=$(printf 'yq %q' "${yq_expr}")
   fi
 
   # --transform overrides --yq
