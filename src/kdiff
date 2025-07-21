@@ -59,20 +59,13 @@ EOF
 # Parse command line arguments using GNU getopt
 parse_args() {
 
-  # Detect if we are running interactively by checking if stdin is a terminal.
-  if [[ -t 0 || "${force_interactive:-}" == "true" ]]; then
-    interactive=1
-  else
-    interactive=0
-  fi
-
   if ! command -v getopt >/dev/null; then
         echo "Error: GNU getopt is required but not found" >&2
         exit 1
   fi
 
   local opts
-  if ! opts=$(getopt --options h,y,c,t,p,r --long help,yq:,compare:,transform:,preset:,runtime-dir:,force-interactive -n "${SCRIPT_NAME}" -- "$@"); then
+  if ! opts=$(getopt --options h,y,c,t,p,r --long help,yq:,compare:,transform:,preset:,runtime-dir: -n "${SCRIPT_NAME}" -- "$@"); then
     echo "Error: Unable to parse arguments: $@"  >&2
     exit 1
   fi
@@ -107,10 +100,6 @@ parse_args() {
         runtime_dir="$2"
         shift 2
         ;;
-      '--force-interactive')
-        force_interactive=true
-        shift
-        ;;
       '--')
         shift
         break
@@ -120,6 +109,19 @@ parse_args() {
         ;;
     esac
   done
+
+  # If we have exactly 2 non-option arguments,
+  # both of which either files or directories,
+  # then we are called as KUBECTL_EXTERNAL_DIFF
+  if [[ $# -eq 2 ]] && (
+       [[ -f "$1" ]] && [[ -f "$2" ]] ||
+         [[ -d "$1" ]] && [[ -d "$2" ]]
+     );
+  then
+    interactive=0
+  else
+    interactive=1
+  fi
 
   # Store remaining arguments (file paths)
   kubectl_args=("$@")
