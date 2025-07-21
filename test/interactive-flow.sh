@@ -20,7 +20,7 @@ export PATH="${TEST_DIR}:${PATH}"
 
 # Run kdiff in interactive mode
 echo "--- Running kdiff ---"
-kdiff_out=$(src/kdiff --force-interactive --runtime-dir "${TEST_DIR}" --yq '.spec' -- -f my-pod.yaml 2>&1 || true)
+kdiff_out=$(src/kdiff --runtime-dir "${TEST_DIR}" --yq '.spec' -- -f my-pod.yaml 2>&1 || true)
 echo "--- kdiff finished ---"
 
 # Find the preset directory
@@ -51,7 +51,7 @@ echo "PASS: Preset directory created."
 
 # Check the content of the transform script
 transform_content=$(cat "${preset_dir}/transform")
-if ! echo "${transform_content}" | grep -q "yq '.spec'"; then
+if ! echo "${transform_content}" | grep -q "yq .spec"; then
   echo "FAIL: Transform script has wrong content."
   cat "${preset_dir}/transform"
   exit 1
