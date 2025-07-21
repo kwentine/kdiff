@@ -300,9 +300,20 @@ load_presets() {
 create_staging_dir() {
   local staging_dir
   staging_dir=$(mktemp -d -t kdiff-staging-XXXXXX)
-  trap 'rm -rf "${staging_dir}"' EXIT INT TERM
+  # TODO Since create_staging _dir is called twice the first trap will be lost
+  #      and one directory left behind.
+  # trap 'rm -rf "${staging_dir}"' EXIT INT TERM
+  staging_dirs+=("${staging_dir}")
   echo "${staging_dir}"
 }
+
+
+cleanup_staging_dirs() {
+  for dir in "${staging_dirs[@]}"; do
+    [[ -d "${dir}" ]] && rm -f "${dir}"
+  done
+}
+
 
 # Create a default runtime preset directory, capturing the interactive call arguments.
 create_runtime_preset() {
@@ -386,6 +397,9 @@ main() {
   local interactive=0
   local runtime_dir="${XDG_RUNTIME_DIR:-/tmp}"
   local kubectl_args=()
+
+  local staging_dirs=()
+  trap 'cleanup_staging_dirs' EXIT INT TERM
 
   parse_args "$@"
 
