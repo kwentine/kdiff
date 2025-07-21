@@ -180,7 +180,13 @@ handle_internal_call() {
 #   DIFF_CMD The diff command to use
 handle_interactive_call() {
   local preset_path
-  preset_path=$(create_runtime_preset)
+  if [[ -n "${preset}" ]]; then
+    # If a preset is specified, use it directly.
+    preset_path="${preset}"
+  else
+    # Otherwise, create a runtime preset for the ad-hoc transform/compare flags.
+    preset_path=$(create_runtime_preset)
+  fi
 
   # Get the absolute path of the currently running script
   local script_path

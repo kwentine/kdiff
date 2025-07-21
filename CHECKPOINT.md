@@ -1,24 +1,24 @@
-# Checkpoint - 2025-07-20
+# Checkpoint - 2025-07-21
 
 ## Summary of Progress
 
-We have completed the initial implementation of the core logic for the `src/kdiff` script, covering both its primary modes of operation.
+We have successfully debugged and stabilized the `src/kdiff` script, achieving a functional state for its primary use cases.
 
-### Implemented Features:
-- **Argument Parsing:** The `parse_args` function can now robustly detect whether the script is being run in an interactive terminal (`[[ -t 0 ]]`) or as part of an internal `kubectl`/`argocd` call. A `--force-interactive` flag was added to simplify testing.
-- **Interactive Mode:** The `handle_interactive_call` workflow is fully implemented. It correctly:
-    - Creates a unique runtime preset directory.
-    - Compiles `transform` and `compare` scripts based on user flags (`--yq`, `--transform`, `--compare`) or defaults.
-    - Exports the `KUBECTL_EXTERNAL_DIFF` variable pointing to itself with the correct preset path.
-    - Calls `kubectl diff` with the user's intended arguments.
-- **Internal Mode:** The `handle_internal_call` workflow is implemented. It:
-    - Loads the specified preset.
-    - Creates staging directories for the "live" and "merged" manifests.
-    - Applies the `transform` script to all files.
-    - Executes the `compare` script on the two staged directories.
-- **Testing:** An initial test script, `test/interactive-flow.sh`, has been created to validate the interactive workflow using a `kubectl` spy.
+### Completed Items:
+- **Bug Fixes:**
+    - **Call Detection:** The logic to distinguish between interactive and internal `kubectl`/`argocd` calls was improved to be more robust by inspecting arguments rather than relying on TTY detection (Commit `4eefebf`).
+    - **Staging Directory Cleanup:** A bug that caused temporary staging directories to be left behind was fixed by implementing a centralized cleanup trap (Commit `9aa0da6`).
+    - **`yq` Quoting:** Ensured `yq` expressions are quoted correctly when generating runtime transform scripts (Commit `8e476a5`).
+    - **Preset Handling:** The most critical bug was fixed in the `handle_interactive_call` function. The script now correctly uses a user-specified `--preset` instead of incorrectly creating a new, empty runtime preset. This allows pre-configured presets to work as intended.
+
+- **Testing:**
+    - The `test/interactive-flow.sh` script was updated to reflect the latest code changes and is now passing, validating the interactive workflow.
+
+- **Features:**
+    - A default preset has been created at `presets/default` which includes a `transform` script to remove common Kubernetes clutter and a `compare` script using `diff -u -N`.
 
 ### Current Status
-The project is in the testing and debugging phase. The `test/interactive-flow.sh` script is consistently failing. The root cause appears to be a persistent bug related to the expansion of the `$$` shell variable for the Process ID when creating runtime presets.
+The `kdiff` script is now considered functional. It can be invoked interactively with ad-hoc transformations (e.g., `--yq`) or with pre-configured presets (e.g., `--preset ./presets/default`), and it correctly sets up the environment for the internal `kubectl diff` call.
 
-**Next Action:** The user will manually correct the PID-related bug in `src/kdiff`. Once fixed, we will resume by running the test script to confirm the fix and proceed with further testing and refinement.
+### Next Steps
+The user will draft the next steps. A `TODO.md` file has been created to track the planned migration of the test suite to the Bats testing framework for improved structure and maintainability.
