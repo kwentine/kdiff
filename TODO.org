@@ -1,0 +1,23 @@
+* TODO Debug ArgoCD diff
+
+Running:
+#+begin_src sh
+KUBECTL_EXTERNAL_DIFF="kdiff --preset default"
+argocd app diff argocd/argocd --local overlays/prod --local-repo-root "${HOME}/kth/platform/argocd"
+#+end_src
+
+Outputs:
+#+begin_example
+===== /ConfigMap argocd/argocd-cm ======
+error: Unexpected args: [/tmp/argocd-diff2657689926/argocd-cm-live.yaml /tmp/argocd-diff2657689926/argocd-cm]
+See 'kubectl diff -h' for help and examples
+#+end_example
+* TODO Improve preset executable not found error message
+The current message is:
+#+begin_src example
+Error: Preset transform command is not executable or does not exist: /home/kwentine/.config/kdiff/neat-dyff/transform
+#+end_src
+
+- The message should give helpful instructions:
+  - how to make the file executable
+- The home directory should be abbreviated to ~
