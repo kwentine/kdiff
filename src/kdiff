@@ -216,21 +216,6 @@ handle_interactive_call() {
 }
 
 
-# Apply yq expression to source and save top dest
-# TODO Remove
-transform() {
-  local yq_expr="$1"
-  local src="$2"
-  local dest="${3:-${2/.yaml/.clean.yaml}}"
-
-  # Apply transformation
-  if ! yq "${yq_expr}" "${src}" > "${dest}" 2>/dev/null; then
-    echo "Error: yq transformation failed: ${yq_expr}" >&2
-    exit 1
-  fi
-}
-
-
 # Stage a file for comparison
 # Apply transform and save the output with the same basename,
 # in the staging directory
