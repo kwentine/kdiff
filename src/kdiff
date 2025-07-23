@@ -114,7 +114,7 @@ parse_args() {
       compare_dirs=1
     fi
   fi
-  interactive=$(( !(compare_files || compare_dirs) ))
+  internal_call=$((compare_files || compare_dirs))
   # Store remaining arguments (file paths)
   # TODO Rename to remaining_args or remove variable altogether ?
   kubectl_args=("$@")
@@ -413,7 +413,7 @@ main() {
   local compare_dirs=0
   # Are we acting as KUBECTL_EXTERNAL_DIFF and called by kubectl,
   # or called by the user directly as kdiff ?
-  local interactive=0
+  local internal_call=0
 
   # TODO These should be proper environment variables
   local runtime_dir="${XDG_RUNTIME_DIR:-/tmp}/kdiff"
@@ -426,11 +426,11 @@ main() {
 
   parse_args "$@"
 
-  if ((interactive)); then
-    handle_interactive_call
-  else
+  if ((internal_call)); then
     # The arguments for the internal call are the paths left by parse_args
     handle_internal_call "${kubectl_args[@]}"
+  else
+    handle_interactive_call
   fi
 }
 
