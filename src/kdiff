@@ -107,14 +107,15 @@ parse_args() {
   # TODO There must be a more concise way...
   if (($# == 2)); then
     if [[ -f "$1" ]] && [[ -f "$2" ]]; then
-      echo "Debug: called by argocd diff" >&2
+      echo "Debug: called by Argo CD" >&2
       compare_files=1
     elif [[ -d "$1" ]] && [[ -d "$2" ]]; then
-      echo "Debug: called by kubectl diff" >&2
+      echo "Debug: called by kubectl" >&2
       compare_dirs=1
     fi
   fi
-  ((interactive = compare_files || compare_dirs))
+  ((interactive = !(compare_files || compare_dirs)))
+  echo "Value of interactive: $interactive"
   # Store remaining arguments (file paths)
   # TODO Rename to remaining_args or remove variable altogether ?
   kubectl_args=("$@")
@@ -426,7 +427,7 @@ main() {
 
   parse_args "$@"
 
-  if [[ "${interactive}" -eq 1 ]]; then
+  if ((interactive)); then
     handle_interactive_call
   else
     # The arguments for the internal call are the paths left by parse_args
