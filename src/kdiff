@@ -99,7 +99,7 @@ parse_args() {
     esac
   done
 
-  echo "Debug: remaning args: $@"
+  echo "Debug: remaning args: $@" >&2
   # If we have exactly 2 non-option arguments,
   # both of which either files or directories,
   # then we are called as KUBECTL_EXTERNAL_DIFF
