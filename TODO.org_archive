@@ -1,0 +1,26 @@
+#    -*- mode: org -*-
+
+
+Archived entries from file /home/kwentine/agents/gemini/kdiff-tools/TODO.org
+
+
+* DONE Debug ArgoCD diff
+:PROPERTIES:
+:ARCHIVE_TIME: 2025-07-23 Wed 16:09
+:ARCHIVE_FILE: ~/agents/gemini/kdiff-tools/TODO.org
+:ARCHIVE_CATEGORY: TODO
+:ARCHIVE_TODO: DONE
+:END:
+
+Running:
+#+begin_src sh
+KUBECTL_EXTERNAL_DIFF="kdiff --preset default"
+argocd app diff argocd/argocd --local overlays/prod --local-repo-root "${HOME}/kth/platform/argocd"
+#+end_src
+
+Outputs:
+#+begin_example
+===== /ConfigMap argocd/argocd-cm ======
+error: Unexpected args: [/tmp/argocd-diff2657689926/argocd-cm-live.yaml /tmp/argocd-diff2657689926/argocd-cm]
+See 'kubectl diff -h' for help and examples
+#+end_example
