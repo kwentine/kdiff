@@ -114,8 +114,7 @@ parse_args() {
       compare_dirs=1
     fi
   fi
-  ((interactive = !(compare_files || compare_dirs)))
-  echo "Value of interactive: $interactive"
+  interactive=$(( !(compare_files || compare_dirs) ))
   # Store remaining arguments (file paths)
   # TODO Rename to remaining_args or remove variable altogether ?
   kubectl_args=("$@")
