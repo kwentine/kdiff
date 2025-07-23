@@ -1,5 +1,6 @@
 #!/bin/bash
 set -euo pipefail
+shopt -s nullglob
 
 VERSION="0.1.0"
 SCRIPT_NAME="kdiff"
