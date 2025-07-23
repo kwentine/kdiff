@@ -114,7 +114,10 @@ parse_args() {
       compare_dirs=1
     fi
   fi
-  internal_call=$((compare_files || compare_dirs))
+  interactive=$(( !(compare_files || compare_dirs) ))
+  # Store remaining arguments (file paths)
+  # TODO Rename to remaining_args or remove variable altogether ?
+  kubectl_args=("$@")
 }
 
 # Perform kubectl internal call
@@ -209,7 +212,7 @@ handle_interactive_call() {
   # Unset variables that might interfere with the internal call
   unset yq_expr transform compare preset
 
-  kubectl diff "$@"
+  kubectl diff "${kubectl_args[@]}"
 }
 
 
@@ -410,7 +413,7 @@ main() {
   local compare_dirs=0
   # Are we acting as KUBECTL_EXTERNAL_DIFF and called by kubectl,
   # or called by the user directly as kdiff ?
-  local internal_call=0
+  local interactive=0
 
   # TODO These should be proper environment variables
   local runtime_dir="${XDG_RUNTIME_DIR:-/tmp}/kdiff"
@@ -423,11 +426,11 @@ main() {
 
   parse_args "$@"
 
-  if ((internal_call)); then
-    # The arguments for the internal call are the paths left by parse_args
-    handle_internal_call "$@"
+  if ((interactive)); then
+    handle_interactive_call
   else
-    handle_interactive_call "$@"
+    # The arguments for the internal call are the paths left by parse_args
+    handle_internal_call "${kubectl_args[@]}"
   fi
 }
 
