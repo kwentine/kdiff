@@ -82,9 +82,10 @@ transformed and compared.
 #+end_src
 
 
-
 This is achieved by hooking into =KUBECTL_EXTERNAL_DIFF=, and
 saving =--transform= and =--compare= executables in a *preset*.
+
+** Presets
 
 A preset is a directory in ={HOME}/.config/kdiff= that contains two executables:
 - =transform=, that takes a yaml stream on stdin and outputs a YAML stream.
@@ -122,12 +123,16 @@ or set as a default for all =kubectl diff= and =argocd app diff= calls.
 
 ** KUBECTL_EXTERNAL_DIFF calling conventions
 
-The following examples show how the =KUBECTL_EXTERNAL_DIFF= is called by =kubectl= and =argocd=
+The following examples show that =KUBECTL_EXTERNAL_DIFF= is called differently by =kubectl= and =argocd=,
+=--preset=debug= refers to a preset with =compare= executable just echoing its arguments.
 
-=kubectl diff= calls =KUBECTL_EXTERNAL_DIFF= once,
-with two directories containing all the files to compare.
+=kubectl diff= calls =KUBECTL_EXTERNAL_DIFF=
+- once
+- with two *directories* as arguments $1 and $2
+- files to compare appear in $1 and $2 with the *same name*
+
 #+begin_example
-$ export KUBECTL_EXTERNAL_DIFF=kdiff-inspect
+$ export KUBECTL_EXTERNAL_DIFF="kdiff --preset=debug"
 $ k diff -f v1_configmap_argocd-cm.yaml -f v1_configmap_argocd-cmd-params-cm.yaml
 Argument list: /tmp/LIVE-3407625460 /tmp/MERGED-4175425960
 Left: /tmp/LIVE-3407625460
@@ -138,9 +143,14 @@ v1.ConfigMap.argocd.argocd-cm
 v1.ConfigMap.argocd.argocd-cmd-params-cm
 #+end_example
 
-=argocd diff= calls =KUBECTL_EXTERNAL_DIFF= once for each pair of files to compare.
+=argocd diff= calls =KUBECTL_EXTERNAL_DIFF=
+- once for each pair of files to compare.
+- with arguments $1 and $2 set to files with *different names*
+  - the live version currently has a =-live.yaml= suffix,
+    but it is perhaps best not to rely upon this internal convention.
+
 #+begin_example
-$ export KUBECTL_EXTERNAL_DIFF=kdiff-inspect
+$ export KUBECTL_EXTERNAL_DIFF="kdiff --preset=inspect"
 $ argocd app diff myapp
 ===== /ServiceAccount argocd/argocd-redis-ha-haproxy ======
 Argument list: /tmp/argocd-diff3488706002/argocd-redis-ha-haproxy-live.yaml /tmp/argocd-diff3488706002/argocd-redis-ha-haproxy
