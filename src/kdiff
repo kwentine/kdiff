@@ -98,23 +98,23 @@ parse_args() {
     esac
   done
 
+  echo "Debug: remaning args: $@"
   # If we have exactly 2 non-option arguments,
   # both of which either files or directories,
   # then we are called as KUBECTL_EXTERNAL_DIFF
-  if [[ $# -eq 2 ]] && (
-       [[ -f "$1" ]] && [[ -f "$2" ]] ||
-         [[ -d "$1" ]] && [[ -d "$2" ]]
-     );
-  then
-    interactive=0
-  else
-    interactive=1
+  interactive=1
+  if (($# == 2)); then
+    if [[ -f "$1" ]] && [[ -f "$2" ]]; then
+      echo "Debug: called by argocd diff" >&2
+      interactive=0
+    elif [[ -d "$1" ]] && [[ -d "$2" ]]; then
+      echo "Debug: called by kubectl diff" >&2
+      interactive=0
+    fi
   fi
-
   # Store remaining arguments (file paths)
+  # TODO Rename to remaining_args or remove variable altogether ?
   kubectl_args=("$@")
-
-
 }
 
 # Perform kubectl internal call
@@ -127,6 +127,8 @@ parse_args() {
 #   LEFT         The left-hand side argument given by the diff tool.
 #   RIGHT        The right-hand side argument given by the diff tool.
 handle_internal_call() {
+  echo "Debug: Internal call with args: $@" >&2
+
   # An internal call MUST have a preset argument.
   if [[ -z "${preset}" ]]; then
     echo "Error: Internal call is missing the required --preset argument." >&2
@@ -167,6 +169,8 @@ handle_internal_call() {
 #   YQ_EXPR  The user-provided yq expression
 #   DIFF_CMD The diff command to use
 handle_interactive_call() {
+  echo "Debug: Interactive call with args: $@" >&2
+
   local preset_name
   if [[ -n "${preset}" ]]; then
     # If a preset is specified, use it directly.
@@ -216,7 +220,10 @@ stage_file() {
 
     local basename
     basename=$(basename "${src_file}")
-    local dest_file="${staging_dir}/${basename}"
+    # ArgoCD appends a '-live' suffix to resource names that we
+    # need to strip to keep identical filenames in our two staging dirs
+    # TODO Consider alternative, less brittle solutions
+    local dest_file="${staging_dir}/${basename/-live.yaml/}"
 
     if [[ -n "${transform_cmd}" && -x "${transform_cmd}" ]]; then
       if ! "${transform_cmd}" < "${src_file}" > "${dest_file}"; then
