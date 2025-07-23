@@ -157,7 +157,17 @@ handle_internal_call() {
 
   # Execute the compare command from the preset.
   # The load_presets function guarantees that this command exists and is executable.
-  "${compare_cmd}" "${left_staged}" "${right_staged}"
+  if ((compare_dirs)); then
+    "${compare_cmd}" "${left_staged}" "${right_staged}"
+  elif ((compare_files)); then
+    # TODO How can we make this more robust and ensure only one file is expanded ?
+    "${compare_cmd}" "${left_staged}"/* "${right_staged}"/*
+  else
+    echo "Error: we are supposed to compare either two files or two directories" >&2
+    # TODO We should ensure error codes > 1 are returned upond abnormal termination
+    #      to distinguish from 1 returned by diff tool on difference found
+    exit 2
+  fi
 }
 
 # Setup ourselves as KUBECTL_EXTERNAL_DIFF and call kubectl
