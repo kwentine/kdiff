@@ -102,16 +102,18 @@ parse_args() {
   # If we have exactly 2 non-option arguments,
   # both of which either files or directories,
   # then we are called as KUBECTL_EXTERNAL_DIFF
-  interactive=1
+
+  # TODO There must be a more concise way...
   if (($# == 2)); then
     if [[ -f "$1" ]] && [[ -f "$2" ]]; then
       echo "Debug: called by argocd diff" >&2
-      interactive=0
+      compare_files=1
     elif [[ -d "$1" ]] && [[ -d "$2" ]]; then
       echo "Debug: called by kubectl diff" >&2
-      interactive=0
+      compare_dirs=1
     fi
   fi
+  ((interactive = compare_files || compare_dirs))
   # Store remaining arguments (file paths)
   # TODO Rename to remaining_args or remove variable altogether ?
   kubectl_args=("$@")
@@ -393,14 +395,26 @@ EOF
 
 # Main function
 main() {
+  # TODO Should we use a convention to cleary identify these "semi global"
+  #      variables that hold shared state several functions rely on ?
   # Setup defaults
   local yq_expr=""
+  # TODO compare_cmd and transform_cmd would perhaps be better names
   local compare=""
   local transform=""
   local preset=""
+  # Whether we are passed two files or two directories to compare
+  local compare_files=0
+  local compare_dirs=0
+  # Are we acting as KUBECTL_EXTERNAL_DIFF and called by kubectl,
+  # or called by the user directly as kdiff ?
   local interactive=0
+
+  # TODO These should be proper environment variables
   local runtime_dir="${XDG_RUNTIME_DIR:-/tmp}/kdiff"
   local config_dir="${XDG_CONFIG_HOME:-${HOME}/.config/kdiff}"
+
+  # TODO Name should be more general: remaining_args or not_our_args
   local kubectl_args=()
   local staging_dirs=()
   trap 'cleanup_staging_dirs' EXIT INT TERM
