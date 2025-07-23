@@ -139,6 +139,7 @@ handle_internal_call() {
   fi
 
   # These variables will be populated by load_presets.
+  # TODO should be renamed to transform_exec and compare_exec
   local transform_cmd=""
   local compare_cmd=""
   load_presets "${preset}"
@@ -159,10 +160,19 @@ handle_internal_call() {
   # Execute the compare command from the preset.
   # The load_presets function guarantees that this command exists and is executable.
   if ((compare_dirs)); then
+    # Pass staging directories directly to compare command.
+    # Files in both directories are assumed to have matching names.
     "${compare_cmd}" "${left_staged}" "${right_staged}"
   elif ((compare_files)); then
-    # TODO How can we make this more robust and ensure only one file is expanded ?
-    "${compare_cmd}" "${left_staged}"/* "${right_staged}"/*
+    # Pass individual transformed files to compare command.
+    # Ensure a single file comes from each directory after glob expansion
+    left_file=("${left_staged}"/*)
+    right_file=("${right_staged}"/*)
+    if (( ${#left_file[@]} != 1 || ${#right_file[@]} != 1 )); then
+      echo "Error: Expected exactly one file in each staging directory, found ${#left_file[@]} and ${#right_file[@]}" >&2
+      exit 2
+    fi
+    "${compare_cmd}" "${left_file[0]}" "${right_file[0]}"
   else
     echo "Error: we are supposed to compare either two files or two directories" >&2
     # TODO We should ensure error codes > 1 are returned upond abnormal termination
@@ -207,6 +217,7 @@ handle_interactive_call() {
 
 
 # Apply yq expression to source and save top dest
+# TODO Remove
 transform() {
   local yq_expr="$1"
   local src="$2"
@@ -223,23 +234,21 @@ transform() {
 # Stage a file for comparison
 # Apply transform and save the output with the same basename,
 # in the staging directory
+# TODO Rename to 'transform' and replace function just above.
 stage_file() {
     local src_file="$1"
     local staging_dir="$2"
-    local transform_cmd="$3"
+    local transform_exec="$3"
 
     # Skip if the source is not a file
     [[ ! -f "${src_file}" ]] && return
 
     local basename
     basename=$(basename "${src_file}")
-    # ArgoCD appends a '-live' suffix to resource names that we
-    # need to strip to keep identical filenames in our two staging dirs
-    # TODO Consider alternative, less brittle solutions
-    local dest_file="${staging_dir}/${basename/-live.yaml/}"
+    local dest_file="${staging_dir}/${basename}"
 
-    if [[ -n "${transform_cmd}" && -x "${transform_cmd}" ]]; then
-      if ! "${transform_cmd}" < "${src_file}" > "${dest_file}"; then
+    if [[ -n "${transform_exec}" && -x "${transform_exec}" ]]; then
+      if ! "${transform_exec}" < "${src_file}" > "${dest_file}"; then
         echo "Warning: Transform failed for ${basename}, using original" >&2
         cp "${src_file}" "${dest_file}"
       fi
@@ -411,6 +420,7 @@ main() {
   # Setup defaults
   local yq_expr=""
   # TODO compare_cmd and transform_cmd would perhaps be better names
+  #      see similar variables initialized in load_preset
   local compare=""
   local transform=""
   local preset=""
