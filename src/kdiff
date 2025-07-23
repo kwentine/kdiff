@@ -216,11 +216,10 @@ handle_interactive_call() {
 }
 
 
-# Stage a file for comparison
+# Transform a file prior to comparison
 # Apply transform and save the output with the same basename,
 # in the staging directory
-# TODO Rename to 'transform' and replace function just above.
-stage_file() {
+transform() {
     local src_file="$1"
     local staging_dir="$2"
     local transform_exec="$3"
@@ -259,11 +258,11 @@ stage_all() {
       # If it's a directory, process all files within it
       local file
       for file in "${src_path}"/*; do
-        stage_file "${file}" "${staging_dir}" "${transform_cmd}"
+        transform "${file}" "${staging_dir}" "${transform_cmd}"
       done
     elif [[ -f "${src_path}" ]]; then
       # If it's a single file, process it
-      stage_file "${src_path}" "${staging_dir}" "${transform_cmd}"
+      transform "${src_path}" "${staging_dir}" "${transform_cmd}"
     else
         echo "Error: Path is neither a file nor a directory: ${src_path}" >&2
         return 1
