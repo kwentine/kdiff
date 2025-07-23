@@ -24,3 +24,21 @@ Outputs:
 error: Unexpected args: [/tmp/argocd-diff2657689926/argocd-cm-live.yaml /tmp/argocd-diff2657689926/argocd-cm]
 See 'kubectl diff -h' for help and examples
 #+end_example
+
+* DONE Adapt staging strategy to file with different basenames
+:PROPERTIES:
+:ARCHIVE_TIME: 2025-07-23 Wed 18:08
+:ARCHIVE_FILE: ~/agents/claude/kdiff-tools/TODO.org
+:ARCHIVE_CATEGORY: TODO
+:ARCHIVE_TODO: DONE
+:END:
+- ArgoCD passes arguments =<resource name>-live.yaml= and =<resource name>=
+- Current =kdiff= staging strategy:
+  - creates "left" and "right" directories
+  - passes "left" and "right" to the comparison function
+- This fails if files in left and right do not have the same name
+
+- Possible fixe:
+  - Take advantage that we already check argument type,
+    and can set =file_compare= variable
+  - Pass files directly rather than directories to =compare= executable

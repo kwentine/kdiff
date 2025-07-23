@@ -1,15 +1,3 @@
-* TODO Adapt staging strategy to file with different basenames
-- ArgoCD passes arguments =<resource name>-live.yaml= and =<resource name>=
-- Current =kdiff= staging strategy:
-  - creates "left" and "right" directories
-  - passes "left" and "right" to the comparison function
-- This fails if files in left and right do not have the same name
-
-- Possible fixe:
-  - Take advantage that we already check argument type,
-    and can set =file_compare= variable
-  - Pass files directly rather than directories to =compare= executable
-
 * TODO Improve preset executable not found error message
 The current message is:
 #+begin_src example
@@ -23,6 +11,19 @@ Error: Preset transform command is not executable or does not exist: /home/kwent
 - Introduce -v|--verbose options
 - Introduce a helper to log message with prefix to stderr
 - Add some useful debug logs to test it
+
+#+begin_src sh
+# Exit codes
+readonly EXIT_SUCCESS=0
+readonly EXIT_GENERAL_ERROR=1
+readonly EXIT_USAGE_ERROR=2
+readonly EXIT_PRESET_ERROR=3
+
+# Debug function - controlled by KDIFF_DEBUG environment variable
+debug() {
+    [[ "${KDIFF_DEBUG:-}" == "1" ]] && echo "Debug: $*" >&2
+}
+#+end_src
 * TODO Introduce KDIFF_ environment variables
 - KDIFF_CONFIG_DIR and KDIFF_RUNTIME_DIR
   - Replace the current variables local to main
