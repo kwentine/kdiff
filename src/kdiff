@@ -324,7 +324,7 @@ create_staging_dir() {
 
 cleanup_staging_dirs() {
   for dir in "${staging_dirs[@]}"; do
-    [[ -d "${dir}" ]] && rm -f "${dir}"
+    [[ -d "${dir}" ]] && rm -rf "${dir}"
   done
 }
 
