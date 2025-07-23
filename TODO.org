@@ -21,3 +21,13 @@ Error: Preset transform command is not executable or does not exist: /home/kwent
 - The message should give helpful instructions:
   - how to make the file executable
 - The home directory should be abbreviated to ~
+* TODO Support verbose debug mode
+- Introduce -v|--verbose options
+- Introduce a helper to log message with prefix to stderr
+- Add some useful debug logs to test it
+* TODO Introduce KDIFF_ environment variables
+- KDIFF_CONFIG_DIR and KDIFF_RUNTIME_DIR
+  - Replace the current variables local to main
+  - Use the same default conventions
+- KDIFF_PRESET
+  - Perhaps useful. Not sure about how yet
