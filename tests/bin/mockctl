@@ -1,0 +1,42 @@
+#!/bin/bash
+set -u
+
+mockctl() {
+  if [[ -z ${KDIFF_TEST_FIXTURES:-} ]]; then
+    echo "ERROR: KDIFF_TEST_FIXTURES must be set" >&2
+    exit
+  fi
+
+  local invoked_as
+  invoked_as=$(basename "$0")
+  if [[ ${invoked_as} == kubectl ]]; then
+    local left="${KDIFF_TEST_FIXTURES}/kubectl/LIVE"
+    local right="${KDIFF_TEST_FIXTURES}/kubectl/MERGED"
+  elif [[ ${invoked_as} == argocd ]]; then
+    local left="${KDIFF_TEST_FIXTURES}/argocd/pod.yaml"
+    local right="${KDIFF_TEST_FIXTURES}/argocd/pod-live"
+  else
+    echo "ERROR: mockctl does not implement $0"
+    exit 1
+  fi
+
+  # Split command on spaces (like kubectl does)
+  IFS=' ' read -ra cmd_parts <<< "${KUBECTL_EXTERNAL_DIFF:-echo}"
+
+  local command="${cmd_parts[0]}"
+  local args=()
+
+  # Filter arguments with kubectl's regex: ^[a-zA-Z0-9-=]+$
+  for arg in "${cmd_parts[@]:1}"; do
+    if [[ ${arg} =~ ^[a-zA-Z0-9=-]+$ ]]; then
+      args+=("${arg}")
+    fi
+    # kubectl silently drops invalid args, so we do too
+  done
+
+  # Execute with two paths, and filtered args appended.
+  echo "DEBUG: mockctl command='${command}' args=(${args[*]}) left='${left}' right='${right}'" >&2
+  "${command}" "${left}" "${right}" "${args[@]}"
+}
+
+mockctl "$@"

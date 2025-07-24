@@ -5,9 +5,24 @@ shopt -s nullglob
 VERSION="0.1.0"
 SCRIPT_NAME="kdiff"
 
-[[ -z "${KDIFF_RUNTIME_DIR}" ]] && KDIFF_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/tmp}/kdiff"
-[[ -z "${KDIFF_CONFIG_DIR}" ]] && KDIFF_CONFIG_DIR="${XDG_CONFIG_HOME:-${HOME}}/.config/kdiff"
+[[ -z "${KDIFF_RUNTIME_DIR:-}" ]] && KDIFF_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/tmp}/kdiff"
+[[ -z "${KDIFF_CONFIG_DIR:-}" ]] && KDIFF_CONFIG_DIR="${XDG_CONFIG_HOME:-${HOME}/.config}/kdiff"
 
+# We use the same convention as diff:
+#   Exit status is 0 if inputs are the same, 1 if different, 2 if trouble.
+readonly SUCCESS=0
+readonly DIFFERENT=1
+readonly ERROR=2
+
+debug() {
+  [[ "${KDIFF_DEBUG:-}" == "1" ]] && echo "DEBUG: $*" >&2
+  return 0
+}
+
+error_exit() {
+  echo "ERROR: $*" >&2
+  exit "${ERROR}"
+}
 
 # Help message
 show_help() {
@@ -57,14 +72,12 @@ EOF
 parse_args() {
 
   if ! command -v getopt >/dev/null; then
-        echo "Error: GNU getopt is required but not found" >&2
-        exit 1
+        error_exit "GNU getopt is required but not found"
   fi
 
   local opts
   if ! opts=$(getopt --options h,y,c,t,p --long help,yq:,compare:,transform:,preset: -n "${SCRIPT_NAME}" -- "$@"); then
-    echo "Error: Unable to parse arguments: $@"  >&2
-    exit 1
+    error_exit "Unable to parse arguments: $*"
   fi
 
   # Set the normalized arguments
@@ -82,11 +95,11 @@ parse_args() {
         shift 2
         ;;
       '-t'|'--transform')
-        transform="$2"
+        transform_cmd="$2"
         shift 2
         ;;
       '-c'|'--compare')
-        compare="$2"
+        compare_cmd="$2"
         shift 2
         ;;
       '-p'|'--preset')
@@ -98,29 +111,24 @@ parse_args() {
         break
         ;;
       *)
-        echo "Unrecognized argument: $1" >&2
+        error_exit "Unrecognized argument: $1"
         ;;
     esac
   done
 
-  echo "Debug: remaning args: $@" >&2
+  debug "Remaining args: $*"
   # If we have exactly 2 non-option arguments,
   # both of which either files or directories,
   # then we are called as KUBECTL_EXTERNAL_DIFF
-
-  # TODO There must be a more concise way...
+  # TODO we are called internally but files do not exist ?
   if (($# == 2)); then
     if [[ -f "$1" ]] && [[ -f "$2" ]]; then
-      echo "Debug: called by Argo CD" >&2
       compare_files=1
     elif [[ -d "$1" ]] && [[ -d "$2" ]]; then
-      echo "Debug: called by kubectl" >&2
       compare_dirs=1
     fi
   fi
   internal_call=$((compare_files || compare_dirs))
-  # Store remaining arguments (file paths)
-  # TODO Rename to remaining_args or remove variable altogether ?
   remaining_args=("$@")
 }
 
@@ -134,19 +142,16 @@ parse_args() {
 #   LEFT         The left-hand side argument given by the diff tool.
 #   RIGHT        The right-hand side argument given by the diff tool.
 handle_internal_call() {
-  echo "Debug: Internal call with args: $@" >&2
+  debug "Internal call with left=${1} and right=${2}"
 
-  # An internal call MUST have a preset argument.
-  if [[ -z "${preset}" ]]; then
-    echo "Error: Internal call is missing the required --preset argument." >&2
-    exit 1
+  if [[ -z "${preset:-}" ]]; then
+    debug "Using default preset (--preset argument not given)"
+    preset=default
   fi
 
-  # These variables will be populated by load_presets.
-  # TODO should be renamed to transform_exec and compare_exec
-  local transform_cmd=""
-  local compare_cmd=""
-  load_presets "${preset}"
+  # These variables will be populated by load_preset.
+  local transform_exec compare_exec
+  load_preset "${preset}"
 
   local left="$1"
   local right="$2"
@@ -158,15 +163,15 @@ handle_internal_call() {
   right_staged=$(create_staging_dir)
 
   # Stage the files, applying transformations.
-  stage_all "${left}" "${left_staged}" "${transform_cmd}"
-  stage_all "${right}" "${right_staged}" "${transform_cmd}"
+  stage_all "${left}" "${left_staged}" "${transform_exec}"
+  stage_all "${right}" "${right_staged}" "${transform_exec}"
 
   # Execute the compare command from the preset.
-  # The load_presets function guarantees that this command exists and is executable.
+  # The load_preset function guarantees that this command exists and is executable.
   if ((compare_dirs)); then
     # Pass staging directories directly to compare command.
     # Files in both directories are assumed to have matching names.
-    "${compare_cmd}" "${left_staged}" "${right_staged}"
+    "${compare_exec}" "${left_staged}" "${right_staged}"
   elif ((compare_files)); then
     # Pass individual transformed files to compare command.
     # Ensure a single file comes from each directory after glob expansion
@@ -176,7 +181,7 @@ handle_internal_call() {
       echo "Error: Expected exactly one file in each staging directory, found ${#left_file[@]} and ${#right_file[@]}" >&2
       exit 2
     fi
-    "${compare_cmd}" "${left_file[0]}" "${right_file[0]}"
+    "${compare_exec}" "${left_file[0]}" "${right_file[0]}"
   else
     echo "Error: we are supposed to compare either two files or two directories" >&2
     # TODO We should ensure error codes > 1 are returned upond abnormal termination
@@ -196,16 +201,10 @@ handle_internal_call() {
 #   YQ_EXPR  The user-provided yq expression
 #   DIFF_CMD The diff command to use
 handle_interactive_call() {
-  echo "Debug: Interactive call with args: $@" >&2
+  debug "Interactive call with args: ${remaining_args[*]}"
 
   local preset_name
-  if [[ -n "${preset}" ]]; then
-    # If a preset is specified, use it directly.
-    preset_name="${preset}"
-  else
-    # Otherwise, create a runtime preset for the ad-hoc transform/compare flags.
-    preset_name=$(create_runtime_preset)
-  fi
+  preset_name=$(create_runtime_preset)
 
   # Get the absolute path of the currently running script
   local script_path
@@ -214,7 +213,7 @@ handle_interactive_call() {
   export KUBECTL_EXTERNAL_DIFF="${script_path} --preset ${preset_name}"
 
   # Unset variables that might interfere with the internal call
-  unset yq_expr transform compare preset
+  unset yq_expr transform_cmd compare_cmd preset
 
   kubectl diff "${remaining_args[@]}"
 }
@@ -254,7 +253,7 @@ transform() {
 stage_all() {
     local src_path="$1"
     local staging_dir="$2"
-    local transform_cmd="$3"
+    local transform_exec="$3"
 
     mkdir -p "${staging_dir}"
 
@@ -262,11 +261,11 @@ stage_all() {
       # If it's a directory, process all files within it
       local file
       for file in "${src_path}"/*; do
-        transform "${file}" "${staging_dir}" "${transform_cmd}"
+        transform "${file}" "${staging_dir}" "${transform_exec}"
       done
     elif [[ -f "${src_path}" ]]; then
       # If it's a single file, process it
-      transform "${src_path}" "${staging_dir}" "${transform_cmd}"
+      transform "${src_path}" "${staging_dir}" "${transform_exec}"
     else
         echo "Error: Path is neither a file nor a directory: ${src_path}" >&2
         return 1
@@ -274,41 +273,54 @@ stage_all() {
 }
 
 
-# Load a preset given by name
-# We need to resolve the name relative to runtime or configuration directory.
-# It is not possible to give an absolute path,
-# because this would not pass kubectl argument sanitization.
-# Sets the variables transform_cmd and compare_cmd to absolute executable paths
-load_presets() {
-  local preset_name="$1"
-  local preset_dir=""
+# Load transform and compare executables specified by a preset.
+# A preset is either:
+#   - a string of the form '<transform>:<compare>'
+#   - an alias to a file containing such a string
+# Components of the spec refer to executable files,
+# found either in KDIFF_CONFIG_DIR or KDIFF_RUNTIME_DIR,
+# saved in 'transform_exec' and 'compare_exec' respectively.
+load_preset() {
+  local spec="$1"
+  local maybe_transform_exec
+  local maybe_compare_exec
+  local transform compare
 
-  # User configuration takes precedence
-  if [[ -d "${KDIFF_CONFIG_DIR}/${preset_name}" ]]; then
-    preset_dir="${KDIFF_CONFIG_DIR}/${preset_name}"
-  elif [[ -d "${KDIFF_RUNTIME_DIR}/${preset_name}" ]]; then
-    preset_dir="${KDIFF_RUNTIME_DIR}/${preset_name}"
-  else
-    echo "Error: Preset '${preset_name}' not found in ${KDIFF_CONFIG_DIR} or ${KDIFF_RUNTIME_DIR}" >&2
-    exit 1
-  fi
+  debug "Loading preset ${spec}"
 
-  if [[ ! -d "${preset_dir}" ]]; then
-    echo "Error: Preset directory not found: ${preset_dir}" >&2
-    exit 1
-  fi
+  for preset_dir in "${KDIFF_CONFIG_DIR}" "${KDIFF_RUNTIME_DIR}"; do
 
-  transform_cmd="${preset_dir}/transform"
-  if [[ ! -x "${transform_cmd}" ]]; then
-    echo "Error: Preset transform command is not executable or does not exist: ${transform_cmd}" >&2
-    exit 1
-  fi
+    # If an alias file exists in the current directory,
+    # use its content as our preset spec.
+    if [[ -f "${preset_dir}/${spec}" ]]; then
+      spec=$(cat "${preset_dir}/${spec}")
+      debug "Resolve alias to ${spec}"
+    fi
 
-  compare_cmd="${preset_dir}/compare"
-  if [[ ! -x "${compare_cmd}" ]]; then
-    echo "Error: Preset compare command is not executable or does not exist: ${compare_cmd}" >&2
-    exit 1
-  fi
+    # The preset spec by now must be of the form: <transform>:<compare>
+    # If not, try the next directory in line.
+    if ! [[ ${spec} = *:* ]]; then
+      continue
+    fi
+
+    IFS=':' read -r transform compare <<< "${spec}"
+
+    # Construct the full paths for the transform and compare scripts.
+    # TODO: Ensure default executables are installed (cat and diff)
+    maybe_transform_exec="${preset_dir}/transform/${transform:-default}"
+    maybe_compare_exec="${preset_dir}/compare/${compare:-default}"
+
+    # Check if a *complete* preset (both parts executable) exists in this directory.
+    if [[ -x "${maybe_transform_exec}" && -x "${maybe_compare_exec}" ]]; then
+      # Success! We found a valid preset. Set the global vars and exit.
+      transform_exec="${maybe_transform_exec}"
+      compare_exec="${maybe_compare_exec}"
+      return 0
+    fi
+  done
+
+  # If the loop finishes, no valid preset was found in any directory.
+  error_exit "Could not find a valid preset for '${1}' in ${KDIFF_CONFIG_DIR} or ${KDIFF_RUNTIME_DIR}"
 }
 
 # Create the staging directory where we store the transformed files prior to comparison
@@ -326,79 +338,87 @@ cleanup_staging_dirs() {
   done
 }
 
-
-# Create a default runtime preset directory, capturing the interactive call arguments.
-# TODO: How do we cleanup all these runtime directories ?
+# Create runtime preset from the interactive call arguments.
 create_runtime_preset() {
-  local preset_name="preset-$$"
-  local preset_dir="${KDIFF_RUNTIME_DIR}/${preset_name}"
+  local transform_exec compare_exec alias spec
 
-  mkdir -p "${preset_dir}"
+  if [[ -n "${preset:-}"  ]]; then
+    echo "${preset}"
+    return
+  fi
 
-  compile_transform "${preset_dir}" "${yq_expr}"
-  compile_compare "${preset_dir}"
-
-  echo "${preset_name}"
+  mkdir -p "${KDIFF_RUNTIME_DIR}"
+  transform_exec=$(compile_transform)
+  compare_exec=$(compile_compare)
+  local spec="${transform_exec}:${compare_exec}"
+  local alias="${spec/:/-}"
+  if [[ ! -f "${KDIFF_RUNTIME_DIR}/${alias}" ]]; then
+    echo "${spec}" > "${KDIFF_RUNTIME_DIR}/${alias}"
+  else
+    touch "${KDIFF_RUNTIME_DIR}/${alias}"
+  fi
+  echo "${alias}"
 }
 
-# Save transform command to runtime preset
+# Saves a command in an executatble file, named by its content hash.
+# Arguments:
+#   CMD        String containing the command
+#   DEST_DIR   Directory where the executable file should be saved.
+#              Created if it does not already exists.
+# TODO: Brainstorm alternative names: create_exec_file, save_exec_file...
+save_cmd() {
+  local cmd="${1}"
+  local exec_dir="${2}"
+  mkdir -p "${exec_dir}"
+  content="#!/bin/bash
+set -euo pipefail
+${1} \"\$@\"
+"
+  exec_name="$(printf '%s' "${content}" | sha1sum | head -c 8)"
+  local exec_path="${exec_dir}/${exec_name}"
+
+  if [[ -x "${exec_path}" ]]; then
+    # May help for bookeeping and cleanup
+    touch "${exec_path}"
+  else
+    echo "${content}" > "${exec_path}"
+    chmod +x "${exec_path}"
+  fi
+  echo "${exec_name}"
+}
+
+# Save transform command to an executable file in the runtime preset directory.
+# Name the file with an abridged hash of its contents.
 # The --transform command line argument takes precedence over --yq
 # Fall back to cat
 compile_transform() {
-  local preset_dir="${1}"
-  local yq_expr="${2}"
-  local transform_script_path="${preset_dir}/transform"
-
   # Start with cat as the base command
   local cmd="cat -"
-
-  # --yq sets a yq expression
-  if [[ -n "${yq_expr}" ]]; then
-    # Use printf to properly quote the expression
+  # --transform takes precedence over --yq
+  if [[ -n "${transform_cmd:-}" ]]; then
+    cmd="${transform_cmd}"
+  elif [[ -n "${yq_expr:-}" ]]; then
     cmd=$(printf 'yq %q' "${yq_expr}")
   fi
-
-  # --transform overrides --yq
-  if [[ -n "${transform}" ]]; then
-    cmd="${transform}"
-  fi
-
-  cat <<EOF > "${transform_script_path}"
-#!/bin/bash
-set -euo pipefail
-${cmd}
-EOF
-
-  chmod +x "${transform_script_path}"
+  save_cmd "${cmd}" "${KDIFF_RUNTIME_DIR}/transform"
 }
 
 # Save compare command to runtime preset
 # The --compare command line argument takes precedence
 # Fall back to KUBECTL_EXTERNAL_DIFF if set, otherwise good'ol diff
 compile_compare() {
-  local preset_dir="${1}"
-  local compare_script_path="${preset_dir}/compare"
-
-  # Start with diff as the base command
-  local cmd="diff -u"
-
-  # KUBECTL_EXTERNAL_DIFF is the default if set
-  if [[ -n "${KUBECTL_EXTERNAL_DIFF:-}" ]]; then
+  local cmd
+  # Try --compare
+  if [[ -n "${compare_cmd:-}" ]]; then
+    cmd="${compare_cmd}"
+  elif [[ -n "${KUBECTL_EXTERNAL_DIFF:-}" ]]; then
+    # TODO: Double check that KUBECTL_EXTERNAL_DIF="kdiff --preset foo:bar" would not break
+    #       I think it would have the effect of composing the transforms
     cmd="${KUBECTL_EXTERNAL_DIFF}"
+  else
+    cmd="diff -u"
   fi
-
-  # --compare overrides everything
-  if [[ -n "${compare}" ]]; then
-    cmd="${compare}"
-  fi
-
-  cat <<EOF > "${compare_script_path}"
-#!/bin/bash
-set -euo pipefail
-${cmd} "\$@"
-EOF
-
-  chmod +x "${compare_script_path}"
+  save_cmd "${cmd}" "${KDIFF_RUNTIME_DIR}/compare"
 }
 
 # Main function
@@ -409,11 +429,8 @@ main() {
   # Setup defaults
   local yq_expr=""
 
-  # TODO compare_cmd and transform_cmd would perhaps be better names
-  #      see similar variables initialized in load_preset
-  local compare=""
-  local transform=""
-  local preset=""
+  local compare_cmd transform_cmd
+  local preset
 
   # Whether we are passed two files or two directories to compare
   local compare_files=0

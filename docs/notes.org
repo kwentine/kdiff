@@ -1,0 +1,109 @@
+** Presets
+
+A preset is either:
+- A specification of the form =<transform>:<compare>=
+  - =<transform>= refers to an executable in =${KDIFF_CONFIG_DIR}/kdiff/transform=
+  - =<compare>= refers to an executable in =${KDIFF_CONFIG_DIR}/kdiff/compare=
+- An =<alias>= that is the name of a file in =${KDIFF_CONFIG_DIR}/kdiff=,
+  containing a specification in the format described above
+
+This repository contains an example =presets= directory,
+that can be installed in =${HOME}/.config/kdiff=
+
+*** Composable presets
+
+Transform and compare operations are independant, and should be convenient to combine in any pairing.
+In the initial preset design, if I have one transform =t= and two compare commands =c1= and =c2=,
+combining them would require two directories =t-c1= and =t-c2= with a copy of =t= in each.
+
+Can we specify the pairs =(t, c1)= and =(t, c2)= as presets without having two copies of =t= ?
+
+This leads to a revised design, where a preset is either:
+- A specification of the form =<transform>:<compare>=
+  - =<transform>= refers to an executable in =${KDIFF_CONFIG_DIR}/kdiff/transform=
+  - =<compare>= refers to an executable in =${KDIFF_CONFIG_DIR}/kdiff/compare=
+- An =<alias>= that is the name of a file in =${KDIFF_CONFIG_DIR}/kdiff=, containing a specification described above
+
+Runtime presets generated from interactive calls follow the same convention,
+except that they are located under =${KDIFF_RUNTIME_DIR}=.
+For runtime presets, =<transform>= and =<compare>= must be generated in a way that avoids name collisions.
+An abridged hash of the executable content could be an elegant solution, avoiding storing duplicates of frequently used commands.
+
+With this new method, a preset called =neat:dyff= and aliased =neaty= can be created thus:
+#+begin_src sh
+  mkdir -p "${KDIFF_CONFIG_DIR}/"{compare,transform}
+
+  cat <<EOF > "${KDIFF_CONFIG_DIR}"/transform/neat
+  #!/bin/bash
+  kubectl-neat -f -
+  EOF
+
+  cat <<'EOF' > "${KDIFF_CONFIG_DIR}"/compare/dyff
+  #!/bin/bash
+  dyff between --omit-header --set-exit-code "$1" "$2"
+  EOF
+
+  echo "neat:diff" > "${KDIFF_CONFIG_DIR}"/neaty
+
+  chmod -R +x "${KDIF_CONFIG_DIR}"/compare
+  chmod -R +x "${KDIF_CONFIG_DIR}"/transform
+#+end_src
+
+The preset can be used interactively,
+or set as a default for all =kubectl diff= and =argocd app diff= calls.
+#+begin_src sh
+  # Use as default for all kubectl diff calls
+  KUBECTL_EXTERNAL_DIFF="kdiff --preset neat:dyff"
+  kubectl diff -f mypod.yaml
+
+  # Use just this one time, referring to the preset by its alias
+  kiff --preset neaty -- -f mypod.yaml
+#+end_src
+
+This repository includes an example =presets= directory.
+
+** KUBECTL_EXTERNAL_DIFF calling conventions
+
+The following examples show that =KUBECTL_EXTERNAL_DIFF= is called differently by =kubectl= and =argocd=,
+=--preset=debug= refers to a preset with =compare= executable just echoing its arguments.
+
+=kubectl diff= calls =KUBECTL_EXTERNAL_DIFF=
+- once
+- with two *directories* as arguments $1 and $2
+- files to compare appear in $1 and $2 with the *same name*
+
+#+begin_example
+$ export KUBECTL_EXTERNAL_DIFF="kdiff --preset=debug"
+$ k diff -f v1_configmap_argocd-cm.yaml -f v1_configmap_argocd-cmd-params-cm.yaml
+Argument list: /tmp/LIVE-3407625460 /tmp/MERGED-4175425960
+Left: /tmp/LIVE-3407625460
+v1.ConfigMap.argocd.argocd-cm
+v1.ConfigMap.argocd.argocd-cmd-params-cm
+Right: /tmp/MERGED-4175425960
+v1.ConfigMap.argocd.argocd-cm
+v1.ConfigMap.argocd.argocd-cmd-params-cm
+#+end_example
+
+=argocd diff= calls =KUBECTL_EXTERNAL_DIFF=
+- once for each pair of files to compare.
+- with arguments $1 and $2 set to files with *different names*
+  - the live version currently has a =-live.yaml= suffix,
+    but it is perhaps best not to rely upon this internal convention.
+
+#+begin_example
+$ export KUBECTL_EXTERNAL_DIFF="kdiff --preset=inspect"
+$ argocd app diff myapp
+===== /ServiceAccount argocd/argocd-redis-ha-haproxy ======
+Argument list: /tmp/argocd-diff3488706002/argocd-redis-ha-haproxy-live.yaml /tmp/argocd-diff3488706002/argocd-redis-ha-haproxy
+Left: /tmp/argocd-diff3488706002/argocd-redis-ha-haproxy-live.yaml
+/tmp/argocd-diff3488706002/argocd-redis-ha-haproxy-live.yaml
+Right: /tmp/argocd-diff3488706002/argocd-redis-ha-haproxy
+/tmp/argocd-diff3488706002/argocd-redis-ha-haproxy
+
+===== /ServiceAccount argocd/argocd-repo-server ======
+Argument list: /tmp/argocd-diff74211896/argocd-repo-server-live.yaml /tmp/argocd-diff74211896/argocd-repo-server
+Left: /tmp/argocd-diff74211896/argocd-repo-server-live.yaml
+/tmp/argocd-diff74211896/argocd-repo-server-live.yaml
+Right: /tmp/argocd-diff74211896/argocd-repo-server
+/tmp/argocd-diff74211896/argocd-repo-server
+#+end_example
