@@ -1,0 +1,3 @@
+#!/bin/bash
+kubectl-neat -f - \
+| yq 'del(.. | select(has("dynamicSchemaSpec")).dynamicSchemaSpec)'
