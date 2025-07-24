@@ -5,6 +5,10 @@ shopt -s nullglob
 VERSION="0.1.0"
 SCRIPT_NAME="kdiff"
 
+[[ -z "${KDIFF_RUNTIME_DIR}" ]] && KDIFF_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/tmp}/kdiff"
+[[ -z "${KDIFF_CONFIG_DIR}" ]] && KDIFF_CONFIG_DIR="${XDG_CONFIG_HOME:-${HOME}}/.config/kdiff"
+
+
 # Help message
 show_help() {
   cat << EOF
@@ -280,12 +284,12 @@ load_presets() {
   local preset_dir=""
 
   # User configuration takes precedence
-  if [[ -d "${config_dir}/${preset_name}" ]]; then
-    preset_dir="${config_dir}/${preset_name}"
-  elif [[ -d "${runtime_dir}/${preset_name}" ]]; then
-    preset_dir="${runtime_dir}/${preset_name}"
+  if [[ -d "${KDIFF_CONFIG_DIR}/${preset_name}" ]]; then
+    preset_dir="${KDIFF_CONFIG_DIR}/${preset_name}"
+  elif [[ -d "${KDIFF_RUNTIME_DIR}/${preset_name}" ]]; then
+    preset_dir="${KDIFF_RUNTIME_DIR}/${preset_name}"
   else
-    echo "Error: Preset '${preset_name}' not found in ${config_dir} or ${runtime_dir}" >&2
+    echo "Error: Preset '${preset_name}' not found in ${KDIFF_CONFIG_DIR} or ${KDIFF_RUNTIME_DIR}" >&2
     exit 1
   fi
 
@@ -327,7 +331,7 @@ cleanup_staging_dirs() {
 # TODO: How do we cleanup all these runtime directories ?
 create_runtime_preset() {
   local preset_name="preset-$$"
-  local preset_dir="${runtime_dir}/${preset_name}"
+  local preset_dir="${KDIFF_RUNTIME_DIR}/${preset_name}"
 
   mkdir -p "${preset_dir}"
 
@@ -415,9 +419,6 @@ main() {
   # or called by the user directly as kdiff ?
   local internal_call=0
 
-  # TODO These should be proper environment variables
-  local runtime_dir="${XDG_RUNTIME_DIR:-/tmp}/kdiff"
-  local config_dir="${XDG_CONFIG_HOME:-${HOME}/.config/kdiff}"
 
   # TODO Name should be more general: remaining_args or not_our_args
   local kubectl_args=()
