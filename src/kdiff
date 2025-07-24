@@ -22,7 +22,7 @@ FLAGS:
     --transform          Preprocessing command
     --compare            Comparison (diff) command
                          Defaults to KUBECTL_EXRTERNAL_DIFF
-    --preset             Name of a preset to use. A matchin directory must exist in HOME/.config/kdiff
+    --preset             Name of a preset to use. A matching directory must exist in HOME/.config/kdiff
                          Alternatively, provide an absolute path to a preset directory, e.g. /tmp/test
     --help               Show this help message
 
@@ -121,7 +121,7 @@ parse_args() {
   internal_call=$((compare_files || compare_dirs))
   # Store remaining arguments (file paths)
   # TODO Rename to remaining_args or remove variable altogether ?
-  kubectl_args=("$@")
+  remaining_args=("$@")
 }
 
 # Perform kubectl internal call
@@ -216,7 +216,7 @@ handle_interactive_call() {
   # Unset variables that might interfere with the internal call
   unset yq_expr transform compare preset
 
-  kubectl diff "${kubectl_args[@]}"
+  kubectl diff "${remaining_args[@]}"
 }
 
 
@@ -405,31 +405,33 @@ EOF
 main() {
   # TODO Should we use a convention to cleary identify these "semi global"
   #      variables that hold shared state several functions rely on ?
+
   # Setup defaults
   local yq_expr=""
+
   # TODO compare_cmd and transform_cmd would perhaps be better names
   #      see similar variables initialized in load_preset
   local compare=""
   local transform=""
   local preset=""
+
   # Whether we are passed two files or two directories to compare
   local compare_files=0
   local compare_dirs=0
+
   # Are we acting as KUBECTL_EXTERNAL_DIFF and called by kubectl,
   # or called by the user directly as kdiff ?
   local internal_call=0
 
-
-  # TODO Name should be more general: remaining_args or not_our_args
-  local kubectl_args=()
   local staging_dirs=()
   trap 'cleanup_staging_dirs' EXIT INT TERM
 
+  local remaining_args=()
   parse_args "$@"
 
   if ((internal_call)); then
     # The arguments for the internal call are the paths left by parse_args
-    handle_internal_call "${kubectl_args[@]}"
+    handle_internal_call "${remaining_args[@]}"
   else
     handle_interactive_call
   fi
