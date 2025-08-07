@@ -27,42 +27,50 @@ error_exit() {
 # Help message
 show_help() {
   cat << EOF
-${SCRIPT_NAME} v${VERSION} - Kubernetes diffs with pluggable pre-processing
+${SCRIPT_NAME} v${VERSION} - kubectl diff with configurable transform and compare logic.
 
 USAGE:
     ${SCRIPT_NAME} [FLAGS] -- <COMMAND>
 
 FLAGS:
-    --yq                 yq expression to apply. A shorthand for --transform 'yq <expr>'
-    --transform          Preprocessing command
-    --compare            Comparison (diff) command
+    --yq <expr>          yq expression to apply prior to comparison.
+                         A shorthand for --transform 'yq <expr>'
+    --transform <cmd>    Processing command manifests should undergo prior to comparison
+    --compare   <cmd>    Comparison (diff) command
                          Defaults to KUBECTL_EXRTERNAL_DIFF
-    --preset             Name of a preset to use. A matching directory must exist in HOME/.config/kdiff
-                         Alternatively, provide an absolute path to a preset directory, e.g. /tmp/test
+    --preset    <name>   Preset to use, specified as <transform>:<compare>,
+                         referring to executables of the same name in
+                         ${KDIFF_CONFIG_DIR}/transform and ${KDIFF_CONFIG_DIR}/compare
     --help               Show this help message
 
 EXAMPLES OF INTERACTIVE USE:
-    # Diff only deployment specs
+    # Limit the diff to the resource .spec
     # All arguments after -- are forwarded to kubectl diff
     # The value of KUBECTL_EXTERNAL_DIFF will be used as default compare tool
-    ${SCRIPT_NAME} --yq=.spec -- -f deployment.yaml
+    ${SCRIPT_NAME} --yq=.spec -- -f deploy.yaml
 
     # Remove noisy fields
-    ${SCRIPT_NAME} --yq 'del(.metadata.managedFields, .status)' -- -Rf .
+    ${SCRIPT_NAME} --yq 'del(.metadata.managedFields, .status)' -- -Rf overlays/dev
 
     # Use with custom transform and compare commands
     ${SCRIPT_NAME} --transform 'kubectl neat -f -' --compare 'dyff between' -- -f deploy.yaml
 
     # Use presets.
-    # Assuming that you have in HOME/.config/kdiff/diff-no-clutter:
-    #   - An executable file named 'transform' accepting a yaml stream on stdin
-    #   - An executable file name 'compare' accepting two argumens <left> and <right>
-    # Then have kdiff use the combination by:
-    ${SCRIPT_NAME} --preset diff-no-clutter -- -k overlays/production
+    # Assuming that you have in ${KDIFF_CONFI_DIR} (~/.config/kdiff)
+    #   - An executable transform/foo accepting a yaml stream on stdin
+    #   - An executable compare/bar accepting two argumens <left> and <right>
+    # Then have kdiff use the combination:
+    ${SCRIPT_NAME} --preset foo:bar -- -k overlays/prod
 
-INTEGRATION AS KUBECTL_EXTERNAL_DIFF:
-    You can directly set kdiff as KUBECTL_EXTERNAL_DIFF.
-    export KUBECTL_EXTERNAL_DIFF="${SCRIPT_NAME} --preset dyff-no-clutter"
+USAGE AS KUBECTL_EXTERNAL_DIFF:
+    kdiff can act as KUBECTL_EXTERNAL_DIFF, but a preset *alias* must be
+    created beforehand:
+
+    # Create a preset alias: text file containing a preset spec.
+    echo "foo:bar" > ~/.config/kdiff/myalias
+
+    # Use the foo:bar preset by default everytime kubectl diff is called.
+    export KUBECTL_EXTERNAL_DIFF="${SCRIPT_NAME} --preset myalias"
     kubectl diff -f myapp.yaml
 EOF
 }
