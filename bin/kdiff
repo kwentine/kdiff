@@ -351,13 +351,20 @@ create_runtime_preset() {
   local transform_exec compare_exec alias spec
 
   if [[ -n "${preset:-}"  ]]; then
-    echo "${preset}"
-    return
+    # A preset is specified, either as <transform>:<compare>
+    # or as an alias, set transform_exec and compare_exec
+    # by loading it
+    # The trick here, if preset foo:bar is given,
+    # is to simulate --transform /path/to/foo --compare /path/to/bar
+    load_preset "${preset}"
+    transform_cmd=transform_exec
+    compare_cmd=compare_exec
   fi
 
   mkdir -p "${KDIFF_RUNTIME_DIR}"
   transform_exec=$(compile_transform)
   compare_exec=$(compile_compare)
+
   local spec="${transform_exec}:${compare_exec}"
   local alias="${spec/:/-}"
   if [[ ! -f "${KDIFF_RUNTIME_DIR}/${alias}" ]]; then
@@ -373,11 +380,21 @@ create_runtime_preset() {
 #   CMD        String containing the command
 #   DEST_DIR   Directory where the executable file should be saved.
 #              Created if it does not already exists.
-# TODO: Brainstorm alternative names: create_exec_file, save_exec_file...
 save_cmd() {
   local cmd="${1}"
   local exec_dir="${2}"
   mkdir -p "${exec_dir}"
+
+  # If we are given an absolute path to an executable,
+  # just copy it to the runtime exec dir.
+  # TODO: Add some randomization to the name
+  if [[ "${cmd}" = /* && -x "${cmd}" ]]; then
+    cp "${cmd}" "${exec_dir}"
+    exec_name=$(basename "${cmd}")
+    echo "${exec_name}"
+    return
+  fi
+
   content="#!/bin/bash
 set -euo pipefail
 ${1} \"\$@\"
