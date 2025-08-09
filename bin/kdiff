@@ -56,7 +56,7 @@ EXAMPLES OF INTERACTIVE USE:
     ${SCRIPT_NAME} --transform 'kubectl neat -f -' --compare 'dyff between' -- -f deploy.yaml
 
     # Use presets.
-    # Assuming that you have in ${KDIFF_CONFI_DIR} (~/.config/kdiff)
+    # Assuming that you have in ${KDIFF_CONFIG_DIR} (~/.config/kdiff)
     #   - An executable transform/foo accepting a yaml stream on stdin
     #   - An executable compare/bar accepting two argumens <left> and <right>
     # Then have kdiff use the combination:
@@ -357,8 +357,8 @@ create_runtime_preset() {
     # The trick here, if preset foo:bar is given,
     # is to simulate --transform /path/to/foo --compare /path/to/bar
     load_preset "${preset}"
-    transform_cmd=transform_exec
-    compare_cmd=compare_exec
+    transform_cmd="${transform_exec}"
+    compare_cmd="${compare_exec}"
   fi
 
   mkdir -p "${KDIFF_RUNTIME_DIR}"
