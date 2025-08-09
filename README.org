@@ -1,6 +1,6 @@
 #+TITLE: kdiff
 
-=kdiff= integrates configurable filter and compare logic with =kubectl diff=.
+=kdiff= lets you conveniently integrate YAML cleaning and comparison logic with =kubectl diff=.
 
 Specify how your manifests should be filtered (i.e. "cleaned", or narrowed down in scope),
 and how they shoud be compared, directly on the command line:
@@ -69,3 +69,38 @@ An alias can be a simple alphanumeric string.
 #+end_src
 
 Happy diffing :)
+
+** Installation
+
+=kdiff= depends on [[https://github.com/mikefarah/yq][yq]] for YAML processing. If you haven't already, I encourage you to install it!
+
+Clone the repository and use the =make install= command to install the =kdiff= script.
+By default, this will install =kdiff= to =$HOME/.local/bin=, which should be in your PATH.
+
+#+begin_src sh
+  git clone https://your-repo-url/kdiff.git
+  cd kdiff
+  make install
+#+end_src
+
+You can customize the installation path using the =PREFIX= variable, for example for a system-wide installation (this may require sudo):
+#+begin_src sh
+  # Install to /usr/local/bin
+  make install PREFIX=/usr/local
+#+end_src
+
+An =uninstall= target is also available to remove the script.
+
+*** Presets
+
+The included [[file:presets/][presets]] are optional and can be installed with a separate command:
+#+begin_src sh
+  make install-presets
+#+end_src
+
+This will copy the default presets to =$XDG_CONFIG_HOME/kdiff= (or =~/.config/kdiff=).
+
+Note that some presets have external dependencies, such as [[https://github.com/itaysk/kubectl-neat][kubectl-neat]] and [[https://github.com/homeport/dyff][dyff]].
+You will need to install them separately for the corresponding presets to work.
+
+You can remove the presets with =make uninstall-presets=.
