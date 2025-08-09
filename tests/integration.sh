@@ -52,7 +52,7 @@ test_interactive_call () {
   kdiff -- -f foo.yaml > /dev/null
 
   testlog "--preset clean:dyff"
-  kdiff --preset default -- -f foo.yaml > /dev/null
+  kdiff --preset clean:dyff -- -f foo.yaml > /dev/null
   return 0
 }
 
